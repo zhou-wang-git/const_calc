@@ -1,0 +1,35 @@
+{
+    "name": "数易赋能",
+    "short_name": "数易赋能",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#F3F3F3",
+    "theme_color": "#FFC107",
+    "description": "数易赋能 - 数字命理文化探索工具",
+    "orientation": "portrait-primary",
+    "prefer_related_applications": false,
+    "icons": [
+        {
+            "src": "icons/Icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-maskable-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "maskable"
+        },
+        {
+            "src": "icons/Icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ]
+}
