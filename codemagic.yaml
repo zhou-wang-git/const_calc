@@ -16,6 +16,10 @@ workflows:
       ios_signing:
         distribution_type: app_store
         bundle_identifier: app.numforlife.com
+        provisioning_profiles:
+          - numforlife_appstore
+        certificates:
+          - numforlife_distribution
       vars:
         APP_STORE_APPLE_ID: 184232456@qq.com
       flutter: stable
