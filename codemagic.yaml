@@ -44,7 +44,10 @@ workflows:
         ignore_failure: true
       - name: Flutter build ipa
         script: |
-          flutter build ipa --release --export-options-plist=$CM_EXPORT_OPTIONS_PLIST
+          set -x
+          echo "CM_EXPORT_OPTIONS_PLIST: $CM_EXPORT_OPTIONS_PLIST"
+          ls -la $CM_EXPORT_OPTIONS_PLIST || echo "Export plist not found"
+          flutter build ipa --release --export-options-plist=$CM_EXPORT_OPTIONS_PLIST --verbose
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
