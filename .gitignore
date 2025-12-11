@@ -48,10 +48,6 @@ app.*.map.json
 build_release.log
 *.log`
 
-# Unused experimental files
-assets/shaders/invert_keep_gold.frag
-lib/component/invert_keep_gold_image.dart
-
 # iOS specific (for clean iOS deployment)
 **/ios/**/*.mode1v3
 **/ios/**/*.mode2v3
