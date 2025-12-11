@@ -80,3 +80,9 @@ lib/component/invert_keep_gold_image.dart
 **/ios/Flutter/flutter_export_environment.sh
 **/ios/ServiceDefinitions.json
 **/ios/Runner/GeneratedPluginRegistrant.*
+
+# Sensitive keys (NEVER commit these)
+keys/
+*.p8
+*.p12
+*.mobileprovision

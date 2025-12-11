@@ -1,1 +1,0 @@
-security find-identity -v -p codesigning
