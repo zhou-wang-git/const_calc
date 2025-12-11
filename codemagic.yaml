@@ -31,6 +31,9 @@ workflows:
       - name: Get Flutter packages
         script: |
           flutter packages pub get
+      - name: Generate app icons
+        script: |
+          dart run flutter_launcher_icons
       - name: Install pods
         script: |
           find . -name "Podfile" -execdir pod install \;
