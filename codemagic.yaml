@@ -14,8 +14,6 @@ workflows:
       cancel_previous_builds: false
     environment:
       ios_signing:
-        distribution_type: app_store
-        bundle_identifier: app.numforlife.com
         provisioning_profiles:
           - numforlife_appstore
         certificates:
