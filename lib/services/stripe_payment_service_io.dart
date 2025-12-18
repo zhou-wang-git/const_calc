@@ -3,29 +3,43 @@ import 'package:flutter/material.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:http/http.dart' as http;
 
-import '../services/auth_service.dart';
+import 'auth_service.dart';
 import 'http_service.dart';
+import 'payment_service.dart';
 
-class StripePaymentService {
-  /// 发起支付
-  static Future<void> pay({
+class StripePaymentService implements PaymentService {
+  /// 发起支付（实现 PaymentService 接口）
+  @override
+  Future<bool> pay({
+    required BuildContext context,
     required String vipLevelId,
-    required String currency,
-    required String vipTime,
     required String vipName,
+    required String vipTime,
     required String vipDate,
     required String amount,
     required String originalAmount,
-    BuildContext? context,
+    String currency = 'usd',
   }) async {
-    await _payWithPaymentSheet(
-      vipLevelId: vipLevelId,
-      vipTime: vipTime,
-      vipName: vipName,
-      vipDate: vipDate,
-      amount: amount,
-      originalAmount: originalAmount,
-    );
+    try {
+      await _payWithPaymentSheet(
+        vipLevelId: vipLevelId,
+        vipTime: vipTime,
+        vipName: vipName,
+        vipDate: vipDate,
+        amount: amount,
+        originalAmount: originalAmount,
+      );
+      return true;
+    } catch (e) {
+      // 支付失败或用户取消
+      return false;
+    }
+  }
+
+  /// 恢复购买（Stripe 不需要此功能，提供空实现）
+  @override
+  Future<void> restorePurchases(BuildContext context) async {
+    // Stripe 支付不需要恢复购买功能，仅 iOS IAP 需要
   }
 
   static Future<void> _payWithPaymentSheet({
