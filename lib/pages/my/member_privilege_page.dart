@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 
 import '../../dto/user.dart';
 import '../../dto/vip_fee.dart';
-import '../../services/stripe_payment_service.dart';
+import '../../services/payment_factory.dart';
 import '../../util/http_util.dart';
 
 class MemberPrivilegePage extends StatefulWidget {
@@ -644,7 +644,7 @@ class _MemberPrivilegePageState extends State<MemberPrivilegePage> {
             return _buildPayButton(
               label: '$action${selected.title}', // 购买1年 / 升级5年
               priceText: '$finalPay\$', // 折后应付
-              onTap: () {
+              onTap: () async {
                 String vipName = '';
                 String vipLevelId = '';
                 if (_currentIndex == 1) {
@@ -654,14 +654,18 @@ class _MemberPrivilegePageState extends State<MemberPrivilegePage> {
                   vipName = '至尊';
                   vipLevelId = '3';
                 }
-                StripePaymentService.pay(
+
+                // 使用工厂模式，iOS 调用 IAP，Android/Web 调用 Stripe
+                final paymentService = PaymentFactory.create();
+                await paymentService.pay(
+                  context: context,
                   vipLevelId: vipLevelId,
-                  currency: 'usd',
+                  vipName: vipName == '精英' ? 'elite' : 'supreme',
                   vipTime: selected.vipTime.toString(),
-                  vipName: vipName,
                   vipDate: selected.title,
                   amount: finalPay.toString(),
                   originalAmount: selected.amount.toString(),
+                  currency: 'usd',
                 );
               },
             );

@@ -61,11 +61,14 @@ dependencies:
   smooth_page_indicator: ^1.2.0
   lunar: ^1.7.8
   universal_html: ^2.2.4
+  in_app_purchase: ^3.2.0
+  in_app_purchase_storekit: ^0.4.0
 
 flutter_launcher_icons:
-  android: true
+  android: "launcher_icon"
   ios: true
   image_path: "assets/icons/logo(1).png"
+  image_path_android: "assets/icons/logo.png"
   min_sdk_android: 23
 
 dev_dependencies:
@@ -98,8 +101,6 @@ flutter:
     - assets/icons/icon_mainicon8/
     - assets/images/guide/
 
-  shaders:
-    - assets/shaders/invert_keep_gold.frag
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg
