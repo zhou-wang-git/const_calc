@@ -17,25 +17,25 @@ class IAPService implements PaymentService {
 
   /// 产品 ID 映射（标准化版本）
   ///
-  /// ✅ 符合 Apple 命名规范：com.{company}.{app}.{product}
+  /// ✅ 符合 Apple 命名规范：{bundleId}.{product}
   /// ✅ 产品类型：非续订订阅（Non-renewing subscriptions）
   ///
   /// 映射规则：{vipName}_{vipTime} -> App Store 产品 ID
   /// - vipName: elite (精英) / supreme (至尊)
-  /// - vipTime: 后端传递的时长（月数）
+  /// - vipTime: 后端传递的时长（天数）
   static const Map<String, String> _productIdMap = {
-    // 精英会员
-    'elite_1': 'com.kccdigital.shuyi.fn.elite.1month',   // 精英会员 1 个月
-    'elite_3': 'com.kccdigital.shuyi.fn.elite.3months',  // 精英会员 3 个月
-    'elite_6': 'com.kccdigital.shuyi.fn.elite.6months',  // 精英会员 6 个月
-    'elite_12': 'com.kccdigital.shuyi.fn.elite.1year',   // 精英会员 12 个月
+    // 精英会员（vipTime 为天数）
+    'elite_30': 'app.numforlife.com.elite.1month',    // 精英会员 1 个月
+    'elite_90': 'app.numforlife.com.elite.3months',   // 精英会员 3 个月
+    'elite_180': 'app.numforlife.com.elite.6months',  // 精英会员 6 个月
+    'elite_365': 'app.numforlife.com.elite.1year',    // 精英会员 12 个月
 
-    // 至尊会员
-    'supreme_1': 'com.kccdigital.shuyi.fn.supreme.1month',   // 至尊会员 1 个月
-    'supreme_3': 'com.kccdigital.shuyi.fn.supreme.3months',  // 至尊会员 3 个月
-    'supreme_6': 'com.kccdigital.shuyi.fn.supreme.6months',  // 至尊会员 6 个月
-    'supreme_12': 'com.kccdigital.shuyi.fn.supreme.1year',   // 至尊会员 12 个月
-    'supreme_-1': 'com.kccdigital.shuyi.fn.supreme.lifetime', // 至尊终身会员
+    // 至尊会员（vipTime 为天数）
+    'supreme_30': 'app.numforlife.com.supreme.1month',    // 至尊会员 1 个月
+    'supreme_90': 'app.numforlife.com.supreme.3months',   // 至尊会员 3 个月
+    'supreme_180': 'app.numforlife.com.supreme.6months',  // 至尊会员 6 个月
+    'supreme_365': 'app.numforlife.com.supreme.1year',    // 至尊会员 12 个月
+    'supreme_-1': 'app.numforlife.com.supreme.lifetime',  // 至尊终身会员
   };
 
   /// 获取 IAP 产品 ID
