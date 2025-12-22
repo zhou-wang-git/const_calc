@@ -226,10 +226,19 @@ class IAPService implements PaymentService {
       // 获取 iOS 收据数据（兼容 StoreKit 1 和 StoreKit 2）
       String? receiptData;
       if (Platform.isIOS) {
-        // 直接使用 PurchaseDetails 的 verificationData，无需类型转换
-        receiptData = purchase.verificationData.localVerificationData;
         print('[IAP] Purchase type: ${purchase.runtimeType}');
-        print('[IAP] Receipt data length: ${receiptData.length}');
+        print('[IAP] Verification source: ${purchase.verificationData.source}');
+
+        // 优先使用 serverVerificationData（适用于 Apple verifyReceipt API）
+        // localVerificationData 在 StoreKit 2 中是 JWS 格式，不兼容旧的验证 API
+        receiptData = purchase.verificationData.serverVerificationData;
+        print('[IAP] Server verification data length: ${receiptData.length}');
+
+        // 如果 serverVerificationData 为空，尝试 localVerificationData
+        if (receiptData.isEmpty) {
+          receiptData = purchase.verificationData.localVerificationData;
+          print('[IAP] Fallback to local data, length: ${receiptData.length}');
+        }
       } else {
         _lastVerifyError = '非 iOS 平台';
         print('[IAP] Error: $_lastVerifyError');
