@@ -223,11 +223,12 @@ class IAPService implements PaymentService {
 
       print('[IAP] User: ${user.userid}, token: ${user.token?.substring(0, 10) ?? "null"}...');
 
-      // 获取 iOS 收据数据
+      // 获取 iOS 收据数据（兼容 StoreKit 1 和 StoreKit 2）
       String? receiptData;
       if (Platform.isIOS) {
-        final iosPurchase = purchase as AppStorePurchaseDetails;
-        receiptData = iosPurchase.verificationData.localVerificationData;
+        // 直接使用 PurchaseDetails 的 verificationData，无需类型转换
+        receiptData = purchase.verificationData.localVerificationData;
+        print('[IAP] Purchase type: ${purchase.runtimeType}');
         print('[IAP] Receipt data length: ${receiptData.length}');
       } else {
         _lastVerifyError = '非 iOS 平台';
