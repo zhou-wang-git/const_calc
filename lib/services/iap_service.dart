@@ -180,7 +180,8 @@ class IAPService implements PaymentService {
             if (success) {
               _showSuccess(context, '购买成功！');
             } else {
-              _showError(context, '购买验证失败，请联系客服');
+              // 显示详细错误信息用于调试
+              _showError(context, '购买验证失败\n\n错误详情:\n$_lastVerifyError');
             }
           }
         }
@@ -197,6 +198,9 @@ class IAPService implements PaymentService {
     }
   }
 
+  /// 存储最后一次验证错误信息（用于 UI 显示）
+  String _lastVerifyError = '';
+
   /// 发送收据到后端验证
   Future<bool> _verifyPurchase(
     PurchaseDetails purchase, {
@@ -207,9 +211,17 @@ class IAPService implements PaymentService {
     required String amount,
     required String originalAmount,
   }) async {
+    _lastVerifyError = '';
+
     try {
       final user = AuthService().loginUser;
-      if (user == null) return false;
+      if (user == null) {
+        _lastVerifyError = '用户未登录 (user == null)';
+        print('[IAP] Error: $_lastVerifyError');
+        return false;
+      }
+
+      print('[IAP] User: ${user.userid}, token: ${user.token?.substring(0, 10) ?? "null"}...');
 
       // 获取 iOS 收据数据
       String? receiptData;
@@ -217,25 +229,23 @@ class IAPService implements PaymentService {
         final iosPurchase = purchase as AppStorePurchaseDetails;
         receiptData = iosPurchase.verificationData.localVerificationData;
         print('[IAP] Receipt data length: ${receiptData.length}');
+      } else {
+        _lastVerifyError = '非 iOS 平台';
+        print('[IAP] Error: $_lastVerifyError');
+        return false;
       }
 
       if (receiptData == null || receiptData.isEmpty) {
-        print('[IAP] Error: Receipt data is null or empty');
+        _lastVerifyError = '收据数据为空 (receiptData is null or empty)';
+        print('[IAP] Error: $_lastVerifyError');
         return false;
       }
 
       print('[IAP] Sending receipt to server...');
+      print('[IAP] URL: ${HttpService.baseUrl}/order/addIAPOrder');
+      print('[IAP] product_id: ${purchase.productID}');
+      print('[IAP] transaction_id: ${purchase.purchaseID}');
 
-      // ⚠️ 后端接口需要实现：POST /order/addIAPOrder
-      // 参数：
-      // - receipt: Base64 编码的 Apple 收据
-      // - transaction_id: 交易 ID
-      // - product_id: 产品 ID
-      // - vip_level_id, vip_time, vip_name, vip_date, amount, original_amount
-      // - userid, token
-      //
-      // 后端需要调用 Apple verifyReceipt API 验证收据真实性
-      // 验证通过后给用户开通 VIP
       final res = await http.post(
         Uri.parse('${HttpService.baseUrl}/order/addIAPOrder'),
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
@@ -254,18 +264,29 @@ class IAPService implements PaymentService {
         },
       );
 
-      print('[IAP] Server response: ${res.statusCode} - ${res.body}');
+      print('[IAP] Server response: ${res.statusCode}');
+      print('[IAP] Response body: ${res.body}');
 
       if (res.statusCode >= 400) {
-        print('[IAP] Error: HTTP ${res.statusCode}');
+        _lastVerifyError = 'HTTP错误: ${res.statusCode}\n${res.body}';
+        print('[IAP] Error: $_lastVerifyError');
         return false;
       }
 
       final json = jsonDecode(res.body);
       print('[IAP] Server code: ${json['code']}, msg: ${json['msg']}');
-      return json['code'] == 1;
-    } catch (e) {
+
+      if (json['code'] != 1) {
+        _lastVerifyError = '服务器返回错误: ${json['msg'] ?? "未知"}';
+        print('[IAP] Error: $_lastVerifyError');
+        return false;
+      }
+
+      return true;
+    } catch (e, stackTrace) {
+      _lastVerifyError = '异常: $e';
       print('[IAP] Exception: $e');
+      print('[IAP] StackTrace: $stackTrace');
       return false;
     }
   }
