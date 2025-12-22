@@ -216,11 +216,15 @@ class IAPService implements PaymentService {
       if (Platform.isIOS) {
         final iosPurchase = purchase as AppStorePurchaseDetails;
         receiptData = iosPurchase.verificationData.localVerificationData;
+        print('[IAP] Receipt data length: ${receiptData.length}');
       }
 
       if (receiptData == null || receiptData.isEmpty) {
+        print('[IAP] Error: Receipt data is null or empty');
         return false;
       }
+
+      print('[IAP] Sending receipt to server...');
 
       // ⚠️ 后端接口需要实现：POST /order/addIAPOrder
       // 参数：
@@ -250,13 +254,18 @@ class IAPService implements PaymentService {
         },
       );
 
+      print('[IAP] Server response: ${res.statusCode} - ${res.body}');
+
       if (res.statusCode >= 400) {
+        print('[IAP] Error: HTTP ${res.statusCode}');
         return false;
       }
 
       final json = jsonDecode(res.body);
+      print('[IAP] Server code: ${json['code']}, msg: ${json['msg']}');
       return json['code'] == 1;
     } catch (e) {
+      print('[IAP] Exception: $e');
       return false;
     }
   }
