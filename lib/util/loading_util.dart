@@ -3,18 +3,31 @@ import 'package:flutter/scheduler.dart';
 
 class LoadingUtil {
   static OverlayEntry? _overlayEntry;
-  static bool _isShowing = false;
+  static int _loadingCount = 0;
+  static int _scheduleVersion = 0;
+  static bool _isInsertScheduled = false;
 
-  /// ✅ 打开 Loading
   static void openLoading(BuildContext context, {String text = "加载中..."}) {
-    if (_isShowing) return; // 避免重复显示
-    _isShowing = true;
+    _loadingCount += 1;
+    if (_overlayEntry != null || _isInsertScheduled) return;
+
+    final version = ++_scheduleVersion;
+    _isInsertScheduled = true;
 
     void insert() {
-      final overlay = Overlay.of(context, rootOverlay: true);
+      _isInsertScheduled = false;
+      if (_overlayEntry != null ||
+          _loadingCount <= 0 ||
+          version != _scheduleVersion) {
+        return;
+      }
+
+      final overlay = Overlay.maybeOf(context, rootOverlay: true);
+      if (overlay == null) return;
+
       _overlayEntry = OverlayEntry(
         builder: (_) => Material(
-          color: Colors.black38, // ✅ 半透明浅灰背景
+          color: Colors.black38,
           child: Center(child: _LoadingWidget(text: text)),
         ),
       );
@@ -28,21 +41,36 @@ class LoadingUtil {
     }
   }
 
-  /// ✅ 关闭 Loading（防抖 & 安全检查）
   static void closeLoading() {
-    if (!_isShowing) return;
+    if (_loadingCount > 0) {
+      _loadingCount -= 1;
+    }
+    if (_loadingCount > 0) return;
 
-    // 延迟 50ms，确保 Overlay 已完成插入
-    Future.delayed(const Duration(milliseconds: 50), () {
+    _loadingCount = 0;
+    _scheduleVersion += 1;
+    _isInsertScheduled = false;
+
+    if (_overlayEntry == null) return;
+
+    void remove() {
       try {
         _overlayEntry?.remove();
-        _overlayEntry = null;
       } catch (e) {
         debugPrint("LoadingUtil: close error $e");
       } finally {
-        _isShowing = false;
+        _overlayEntry = null;
       }
-    });
+    }
+
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.idle ||
+        phase == SchedulerPhase.postFrameCallbacks) {
+      remove();
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => remove());
   }
 }
 

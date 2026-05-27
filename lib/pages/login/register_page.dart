@@ -1,11 +1,13 @@
 import 'dart:async';
+
 import 'package:const_calc/pages/login/login_page.dart';
 import 'package:flutter/material.dart';
 
 import '../../services/register_service.dart';
 import '../../util/http_util.dart';
 import '../../util/message_util.dart';
-import '../../util/password_validator.dart';
+import '../../widgets/auth_input_styles.dart';
+import '../my/become_tutor_page.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -16,7 +18,6 @@ class RegisterPage extends StatefulWidget {
 
 class _RegisterPageState extends State<RegisterPage> {
   final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _emailCodeController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
@@ -25,64 +26,57 @@ class _RegisterPageState extends State<RegisterPage> {
 
   bool _obscure1 = true;
   bool _obscure2 = true;
-  int _countdown = 60; // 验证码倒计时
-  bool _isButtonDisabled = false; // 倒计时期间禁用按钮
-  late Timer _timer;
-  String _password = ''; // 用于实时密码强度显示
+  int _countdown = 60;
+  bool _isButtonDisabled = false;
+  Timer? _timer;
 
-  @override
-  void initState() {
-    super.initState();
-    _passwordController.addListener(_onPasswordChanged);
-  }
-
-  void _onPasswordChanged() {
-    setState(() {
-      _password = _passwordController.text;
-    });
-  }
-
-  // 获取验证码的方法
-  void _getCode() async {
-    if (_emailController.text.isEmpty) {
-      MessageUtil.info(context, '邮箱不能为空');
+  Future<void> _getCode() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
+      MessageUtil.info(context, '\u90ae\u7bb1\u4e0d\u80fd\u4e3a\u7a7a');
       return;
     }
 
     await HttpUtil.request<void>(
-      () => RegisterService.sendRegisterEmail(email: _emailController.text),
+      () => RegisterService.sendRegisterEmail(email: email),
       context,
       () => mounted,
     );
 
-    if (!mounted) return;
-    MessageUtil.info(context, '验证码已发送');
+    if (!mounted) {
+      return;
+    }
 
-    // 启动倒计时
+    MessageUtil.info(context, '\u9a8c\u8bc1\u7801\u5df2\u53d1\u9001');
+
     setState(() {
       _isButtonDisabled = true;
+      _countdown = 60;
     });
 
-    // 启动定时器
+    _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_countdown > 0) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      if (_countdown > 1) {
         setState(() {
           _countdown--;
         });
       } else {
-        _timer.cancel();
+        timer.cancel();
         setState(() {
           _isButtonDisabled = false;
-          _countdown = 60; // 重置倒计时
+          _countdown = 60;
         });
       }
     });
   }
 
-  // 注册方法
-  void _register() async {
+  Future<void> _register() async {
     final name = _nameController.text.trim();
-    final username = _usernameController.text.trim();
     final email = _emailController.text.trim();
     final emailCode = _emailCodeController.text.trim();
     final password = _passwordController.text;
@@ -91,56 +85,46 @@ class _RegisterPageState extends State<RegisterPage> {
     final emailRegex = RegExp(r'^[\w\.-]+@[\w\.-]+\.\w+$');
 
     if (name.isEmpty) {
-      MessageUtil.info(context, "姓名不能为空");
-      return;
-    }
-
-    if (username.isEmpty) {
-      MessageUtil.info(context, "账号不能为空");
+      MessageUtil.info(context, '\u59d3\u540d\u4e0d\u80fd\u4e3a\u7a7a');
       return;
     }
 
     if (email.isEmpty) {
-      MessageUtil.info(context, "邮箱不能为空");
+      MessageUtil.info(context, '\u90ae\u7bb1\u4e0d\u80fd\u4e3a\u7a7a');
       return;
     }
 
     if (!emailRegex.hasMatch(email)) {
-      MessageUtil.info(context, "请输入合法的邮箱格式");
+      MessageUtil.info(context,
+          '\u8bf7\u8f93\u5165\u5408\u6cd5\u7684\u90ae\u7bb1\u683c\u5f0f');
       return;
     }
 
     if (emailCode.isEmpty) {
-      MessageUtil.info(context, "邮箱验证码不能为空");
+      MessageUtil.info(
+          context, '\u90ae\u7bb1\u9a8c\u8bc1\u7801\u4e0d\u80fd\u4e3a\u7a7a');
       return;
     }
 
     if (password.isEmpty) {
-      MessageUtil.info(context, "密码不能为空");
-      return;
-    }
-
-    // 密码强度验证
-    final passwordError = PasswordValidator.validate(password);
-    if (passwordError != null) {
-      MessageUtil.info(context, passwordError);
+      MessageUtil.info(context, '请输入 KCC ID 密码');
       return;
     }
 
     if (confirmPassword.isEmpty) {
-      MessageUtil.info(context, "请再次输入密码");
+      MessageUtil.info(context, '\u8bf7\u518d\u6b21\u8f93\u5165\u5bc6\u7801');
       return;
     }
 
     if (password != confirmPassword) {
-      MessageUtil.info(context, "两次输入的密码不一致");
+      MessageUtil.info(context,
+          '\u4e24\u6b21\u8f93\u5165\u7684\u5bc6\u7801\u4e0d\u4e00\u81f4');
       return;
     }
 
     await HttpUtil.request<void>(
       () => RegisterService.registerAccount(
         realName: name,
-        account: username,
         psd: password,
         email: email,
         repsd: confirmPassword,
@@ -155,18 +139,27 @@ class _RegisterPageState extends State<RegisterPage> {
       () => mounted,
     );
 
-    if (!mounted) return;
-    MessageUtil.info(context, '注册成功');
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginPage()),
+    if (!mounted) {
+      return;
+    }
+
+    MessageUtil.info(context, '\u6ce8\u518c\u6210\u529f');
+    await Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => LoginPage(initialIdentifier: email),
+      ),
+      (route) => false,
     );
   }
 
   @override
   void dispose() {
-    _passwordController.removeListener(_onPasswordChanged);
-    _timer.cancel();
+    _timer?.cancel();
+    _nameController.dispose();
+    _emailController.dispose();
+    _emailCodeController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
 
@@ -177,7 +170,7 @@ class _RegisterPageState extends State<RegisterPage> {
     final linkColor = isDark ? Colors.white60 : Colors.grey;
 
     return Scaffold(
-      resizeToAvoidBottomInset: false, // 不让键盘推挤布局
+      resizeToAvoidBottomInset: false,
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
         backgroundColor: theme.appBarTheme.backgroundColor,
@@ -187,13 +180,14 @@ class _RegisterPageState extends State<RegisterPage> {
         leading: IconButton(
           icon: Icon(
             Icons.arrow_back_ios_new,
-            color: theme.appBarTheme.iconTheme?.color ?? (isDark ? Colors.white : Colors.black),
+            color: theme.appBarTheme.iconTheme?.color ??
+                (isDark ? Colors.white : Colors.black),
           ),
           onPressed: () => Navigator.pop(context),
         ),
         centerTitle: true,
         title: Text(
-          '注册',
+          '\u6ce8\u518c',
           style: TextStyle(
             color: theme.appBarTheme.titleTextStyle?.color,
             fontSize: 18,
@@ -202,92 +196,154 @@ class _RegisterPageState extends State<RegisterPage> {
         ),
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-          child: Column(
-            children: [
-              const SizedBox(height: 20),
-              Image.asset(isDark ? 'assets/icons/logo_dark.png' : 'assets/icons/logo.png', height: 120),
-              const SizedBox(height: 30),
-              _buildInput('请输入真实的中文姓名（利于测算）', _nameController),
-              const SizedBox(height: 16),
-              _buildInput('请输入账号', _usernameController),
-              const SizedBox(height: 16),
-              _buildInputWithButton('请输入邮箱', _emailController, _getCode),
-              const SizedBox(height: 16),
-              _buildInput('请输入邮箱验证码', _emailCodeController),
-              const SizedBox(height: 16),
-              _buildPasswordInput('请输入密码', _passwordController, true),
-              PasswordStrengthIndicator(password: _password, centerRequirements: true),
-              const SizedBox(height: 8),
-              _buildPasswordInput('请再次输入密码', _confirmPasswordController, false),
-              const SizedBox(height: 30),
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton(
-                  onPressed: _register,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFFC107),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(25),
+        child: AutofillGroup(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+            child: Column(
+              children: [
+                const SizedBox(height: 20),
+                Image.asset(
+                  isDark
+                      ? 'assets/icons/logo_dark.png'
+                      : 'assets/icons/logo.png',
+                  height: 120,
+                ),
+                const SizedBox(height: 24),
+                Container(
+                  width: double.infinity,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.06)
+                        : const Color(0xFFFFF8E1),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Text(
+                    '此处注册使用邮箱作为登录标识，无需单独设置账号；密码由 KCC ID 统一身份系统管理。',
+                    style: TextStyle(
+                      color: isDark ? Colors.white70 : const Color(0xFF7A5A00),
+                      fontSize: 12.5,
+                      height: 1.5,
                     ),
                   ),
-                  child: const Text(
-                    '注册',
-                    style: TextStyle(fontSize: 16, color: Colors.white),
+                ),
+                const SizedBox(height: 18),
+                _buildInput(
+                  '请输入真实中文姓名（便于测算）',
+                  _nameController,
+                  autofillHints: const [AutofillHints.name],
+                ),
+                const SizedBox(height: 16),
+                _buildInputWithButton(
+                  '请输入邮箱',
+                  _emailController,
+                  _getCode,
+                ),
+                const SizedBox(height: 16),
+                _buildInput(
+                  '请输入邮箱验证码',
+                  _emailCodeController,
+                  autofillHints: const [AutofillHints.oneTimeCode],
+                ),
+                const SizedBox(height: 16),
+                _buildPasswordInput(
+                  '请输入 KCC ID 密码',
+                  _passwordController,
+                  true,
+                  autofillHints: const [AutofillHints.newPassword],
+                ),
+                const SizedBox(height: 8),
+                _buildPasswordInput(
+                  '请再次输入 KCC ID 密码',
+                  _confirmPasswordController,
+                  false,
+                  autofillHints: const [AutofillHints.newPassword],
+                ),
+                const SizedBox(height: 30),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: _register,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFFC107),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(25),
+                      ),
+                    ),
+                    child: const Text(
+                      '\u6ce8\u518c',
+                      style: TextStyle(fontSize: 16, color: Colors.white),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 20),
-              GestureDetector(
-                onTap: () => Navigator.pop(context),
-                child: Text(
-                  '已有帐号',
-                  style: TextStyle(
-                    color: linkColor,
-                    fontSize: 13,
-                    decoration: TextDecoration.underline, // 加下划线
+                const SizedBox(height: 20),
+                GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const BecomeTutorPage()),
+                    );
+                  },
+                  child: Text(
+                    '\u6210\u4e3a\u5bfc\u5e08',
+                    style: TextStyle(
+                      color: linkColor,
+                      fontSize: 13,
+                      decoration: TextDecoration.underline,
+                    ),
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 12),
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Text(
+                    '已有 KCC ID 账号',
+                    style: TextStyle(
+                      color: linkColor,
+                      fontSize: 13,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  // 输入框构建
-  Widget _buildInput(String hint, TextEditingController controller) {
+  Widget _buildInput(
+    String hint,
+    TextEditingController controller, {
+    TextInputType keyboardType = TextInputType.text,
+    Iterable<String>? autofillHints,
+  }) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final inputBgColor = isDark ? theme.cardTheme.color : Colors.white;
-    final inputTextColor = isDark ? Colors.white : Colors.black;
-    final hintColor = isDark ? Colors.white38 : const Color(0xFFB5B5B5);
 
     return TextField(
       controller: controller,
-      cursorColor: Colors.grey,
-      style: TextStyle(fontSize: 14, color: inputTextColor),
-      decoration: InputDecoration(
+      keyboardType: keyboardType,
+      autofillHints: autofillHints,
+      cursorColor: AuthInputStyles.cursorColor(theme),
+      style: TextStyle(
+        fontSize: 14,
+        color: AuthInputStyles.textColor(theme),
+      ),
+      decoration: AuthInputStyles.decoration(
+        context,
         hintText: hint,
-        hintStyle: TextStyle(color: hintColor, fontSize: 14),
-        filled: true,
-        fillColor: inputBgColor,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(25),
-          borderSide: BorderSide.none,
-        ),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
-          vertical: 10,
+          vertical: 12,
         ),
       ),
     );
   }
 
-  // 带验证码按钮的输入框
   Widget _buildInputWithButton(
     String hint,
     TextEditingController controller,
@@ -295,20 +351,31 @@ class _RegisterPageState extends State<RegisterPage> {
   ) {
     return Row(
       children: [
-        Expanded(child: _buildInput(hint, controller)),
+        Expanded(
+          child: _buildInput(
+            hint,
+            controller,
+            keyboardType: TextInputType.emailAddress,
+            autofillHints: const [AutofillHints.email],
+          ),
+        ),
         const SizedBox(width: 8),
         SizedBox(
+          width: 112,
           height: 48,
           child: ElevatedButton(
             onPressed: _isButtonDisabled ? null : onPressed,
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFFFC107),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(25),
               ),
             ),
             child: Text(
-              _isButtonDisabled ? '$_countdown 秒' : '获取验证码',
+              _isButtonDisabled
+                  ? '$_countdown s'
+                  : '\u83b7\u53d6\u9a8c\u8bc1\u7801',
               style: const TextStyle(color: Colors.white, fontSize: 12),
             ),
           ),
@@ -317,58 +384,46 @@ class _RegisterPageState extends State<RegisterPage> {
     );
   }
 
-  // 密码输入框构建
   Widget _buildPasswordInput(
     String hint,
     TextEditingController controller,
-    bool isFirst,
-  ) {
+    bool isFirst, {
+    Iterable<String>? autofillHints,
+  }) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final inputBgColor = isDark ? theme.cardTheme.color : Colors.white;
-    final inputTextColor = isDark ? Colors.white : Colors.black;
-    final hintColor = isDark ? Colors.white38 : const Color(0xFFB5B5B5);
 
-    return Container(
-      decoration: BoxDecoration(
-        color: inputBgColor,
-        borderRadius: BorderRadius.circular(25),
+    return TextField(
+      controller: controller,
+      obscureText: isFirst ? _obscure1 : _obscure2,
+      autofillHints: autofillHints,
+      cursorColor: AuthInputStyles.cursorColor(theme),
+      style: TextStyle(
+        fontSize: 14,
+        color: AuthInputStyles.textColor(theme),
       ),
-      child: TextField(
-        controller: controller,
-        obscureText: isFirst ? _obscure1 : _obscure2,
-        cursorColor: Colors.grey,
-        style: TextStyle(fontSize: 14, color: inputTextColor),
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: TextStyle(color: hintColor, fontSize: 14),
-          filled: true,
-          fillColor: inputBgColor,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(25),
-            borderSide: BorderSide.none,
+      decoration: AuthInputStyles.decoration(
+        context,
+        hintText: hint,
+        suffixIcon: IconButton(
+          icon: Icon(
+            (isFirst ? _obscure1 : _obscure2)
+                ? Icons.visibility_off
+                : Icons.visibility,
+            color: AuthInputStyles.iconColor(theme),
           ),
-          suffixIcon: IconButton(
-            icon: Icon(
-              (isFirst ? _obscure1 : _obscure2)
-                  ? Icons.visibility_off
-                  : Icons.visibility,
-              color: isDark ? Colors.white54 : null,
-            ),
-            onPressed: () {
-              setState(() {
-                if (isFirst) {
-                  _obscure1 = !_obscure1;
-                } else {
-                  _obscure2 = !_obscure2;
-                }
-              });
-            },
-          ),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 10,
-          ),
+          onPressed: () {
+            setState(() {
+              if (isFirst) {
+                _obscure1 = !_obscure1;
+              } else {
+                _obscure2 = !_obscure2;
+              }
+            });
+          },
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
         ),
       ),
     );

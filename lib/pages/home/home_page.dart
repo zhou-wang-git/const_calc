@@ -1,7 +1,7 @@
 import 'package:const_calc/dto/abs.dart';
 import 'package:const_calc/handler/api_exception.dart';
+import 'package:const_calc/services/auth_service.dart';
 import 'package:const_calc/services/abs_service.dart';
-import 'package:const_calc/services/digit_calculation_service.dart';
 import 'package:const_calc/services/http_service.dart';
 import 'package:const_calc/services/my_service.dart';
 import 'package:const_calc/services/theme_service.dart';
@@ -33,12 +33,32 @@ import 'name_calculation_page.dart';
 import 'record_list_page.dart';
 import 'tutor_consult_page.dart';
 import 'tutor_detail_page.dart';
+import '../shop/shop_welcome_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
   @override
   State<HomePage> createState() => _HomePageState();
+}
+
+class _QuickIconColorMapper extends ColorMapper {
+  const _QuickIconColorMapper(this.replacementColor);
+
+  final Color replacementColor;
+
+  @override
+  Color substitute(
+    String? id,
+    String elementName,
+    String attributeName,
+    Color color,
+  ) {
+    if (color.value == 0xFF000000) {
+      return replacementColor;
+    }
+    return color;
+  }
 }
 
 class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
@@ -67,7 +87,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    if (state == AppLifecycleState.resumed && !kIsWeb) {
       // 应用回到前台时重新检查登录状态
       _checkLoginAndInit();
     }
@@ -75,12 +95,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// 检查登录状态并初始化数据
   Future<void> _checkLoginAndInit() async {
-    final user = await _initUserInfo();
-    if (user != null) {
-      // 已登录，加载数据
-      _loadTutorList();
-      _loadToday();
-      _loadAbsList();
+    if (_hasCheckedLogin) return;
+
+    _hasCheckedLogin = true;
+    try {
+      final user = await _initUserInfo();
+      if (user != null) {
+        // 已登录，加载数据
+        _loadTutorList();
+        _loadToday();
+        _loadAbsList();
+      }
+    } finally {
+      _hasCheckedLogin = false;
     }
   }
 
@@ -215,26 +242,53 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     } catch (_) {}
   }
 
+  void _applyUserInfo(User user) {
+    if (!mounted) return;
+
+    setState(() {
+      _avatar = user.avatar.isNotEmpty
+          ? HttpService.domain + user.avatar
+          : 'assets/icons/avatar.png';
+      _greeting = 'Hello, ${user.realName}';
+    });
+  }
+
   Future<User?> _initUserInfo() async {
+    if (!AuthService().isLoggedIn) {
+      if (!mounted) return null;
+      await AuthManager.logout(context);
+      return null;
+    }
+
+    final cachedUser = UserService.getCachedUser();
+    if (cachedUser != null) {
+      _applyUserInfo(cachedUser);
+      return cachedUser;
+    }
+
     try {
       final User? user = await UserService().getUserInfo();
       if (user == null) {
         // 未登录，跳转到登录页
         if (!mounted) return null;
-        AuthManager.logout(context);
+        await AuthManager.logout(context);
         return null;
       }
       // 已登录，更新UI
-      if (mounted) {
-        setState(() {
-          _avatar = user.avatar.isNotEmpty
-              ? HttpService.domain + user.avatar
-              : 'assets/icons/avatar.png';
-          _greeting = 'Hello, ${user.realName}';
-        });
-      }
+      _applyUserInfo(user);
       return user;
-    } catch (_) {
+    } on ApiException catch (e, stack) {
+      debugPrint(
+          'HomePage _initUserInfo auth check failed: ${e.code} ${e.message}');
+      debugPrintStack(stackTrace: stack);
+
+      if (e.code == 401 && mounted) {
+        await AuthManager.logout(context);
+      }
+      return null;
+    } catch (e, stack) {
+      debugPrint('HomePage _initUserInfo transient error: $e');
+      debugPrintStack(stackTrace: stack);
       return null;
     }
   }
@@ -361,8 +415,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         child: GestureDetector(
                           onTap: () async {
                             final navigator = Navigator.of(context);
-                            final User? user = await UserService()
-                                .getUserInfo();
+                            final User? user =
+                                await UserService().getUserInfo();
                             if (user == null) {
                               if (!mounted) return;
                               // ignore: use_build_context_synchronously
@@ -393,8 +447,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
                             try {
                               final navigator = Navigator.of(context);
-                              final User? user = await UserService()
-                                  .getUserInfo();
+                              final User? user =
+                                  await UserService().getUserInfo();
                               if (user == null) {
                                 if (!mounted) return;
                                 // ignore: use_build_context_synchronously
@@ -403,26 +457,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                 AuthManager.logout(context);
                                 return;
                               }
-                              try {
-                                await DigitCalculationService.checkAndConsumeApi(
-                                  purviewId: 8,  // 姓名学 ID
-                                );
-                                navigator.push(
-                                  MaterialPageRoute(
-                                    builder: (context) =>
-                                        const NameCalculationPage(),
-                                  ),
-                                );
-                              } catch (e) {
-                                if (!mounted) return;
-                                if (e is ApiException) {
-                                  // ignore: use_build_context_synchronously
-                                  MessageUtil.info(context, e.message);
-                                } else {
-                                  // ignore: use_build_context_synchronously
-                                  MessageUtil.info(context, '未知错误');
-                                }
-                              }
+                              navigator.push(
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      const NameCalculationPage(),
+                                ),
+                              );
+                              return;
                             } finally {
                               if (mounted) {
                                 setState(() => _isNavigating = false);
@@ -440,7 +481,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         child: GestureDetector(
                           onTap: () async {
                             // 显示即将上线提示
-                            MessageUtil.info(context, '2026年2月起上线');
+                            MessageUtil.info(context, '2026年12月起上线');
 
                             // 原有跳转逻辑（暂时注释）
                             // final navigator = Navigator.of(context);
@@ -470,7 +511,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         child: GestureDetector(
                           onTap: () async {
                             final navigator = Navigator.of(context);
-                            final User? user = await UserService().getUserInfo();
+                            final User? user =
+                                await UserService().getUserInfo();
                             if (user == null) {
                               if (!mounted) return;
                               // ignore: use_build_context_synchronously
@@ -509,50 +551,22 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       Expanded(
                         child: GestureDetector(
                           onTap: () async {
-                            // 显示即将上线提示
-                            MessageUtil.info(context, '2025年1月上线');
-
-                            // 原有跳转逻辑（暂时注释）
-                            // final navigator = Navigator.of(context);
-                            //
-                            // // 生成 Magic Link
-                            // final magicLink = await HttpUtil.request<MagicLink>(
-                            //   () => MyService.generateShopMagicLink(),
-                            //   context,
-                            //   () => mounted,
-                            // );
-                            //
-                            // final shopUrl = magicLink?.link ?? 'https://numforlife.com/shopping';
-                            //
-                            // // Web 平台：同页面跳转到商城
-                            // if (kIsWeb) {
-                            //   // 追加主题参数，让商城同步 App 主题
-                            //   final isDark = ThemeService().isDarkMode;
-                            //   final themeParam = isDark ? 'dark' : 'light';
-                            //   final separator = shopUrl.contains('?') ? '&' : '?';
-                            //   final urlWithTheme = '$shopUrl${separator}theme=$themeParam';
-                            //
-                            //   // 使用 web 包直接跳转，不打开新窗口
-                            //   html.window.location.href = urlWithTheme;
-                            // } else {
-                            //   // 原生平台使用 WebView
-                            //   // 清除 WordPress 域名的 cookies，确保新鲜登录
-                            //   final cookieManager = CookieManager.instance();
-                            //   await cookieManager.deleteCookies(
-                            //     url: WebUri('https://numforlife.com'),
-                            //   );
-                            //
-                            //   navigator.push(
-                            //     MaterialPageRoute(
-                            //       builder: (_) => SafeWebViewPage(
-                            //         url: shopUrl,
-                            //         title: '赋能商城',
-                            //         forceTextureOnAndroid: true,
-                            //         disableHorizontalScroll: true,
-                            //       ),
-                            //     ),
-                            //   );
-                            // }
+                            final navigator = Navigator.of(context);
+                            final User? user =
+                                await UserService().getUserInfo();
+                            if (user == null) {
+                              if (!mounted) return;
+                              // ignore: use_build_context_synchronously
+                              MessageUtil.info(context, '请先登录');
+                              // ignore: use_build_context_synchronously
+                              AuthManager.logout(context);
+                              return;
+                            }
+                            navigator.push(
+                              MaterialPageRoute(
+                                builder: (_) => const ShopWelcomePage(),
+                              ),
+                            );
                           },
                           child: _buildItem(
                             "赋能商城",
@@ -565,8 +579,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         child: InkWell(
                           onTap: () async {
                             final navigator = Navigator.of(context);
-                            final User? user = await UserService()
-                                .getUserInfo();
+                            final User? user =
+                                await UserService().getUserInfo();
                             if (user == null) {
                               if (!mounted) return;
                               // ignore: use_build_context_synchronously
@@ -592,8 +606,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         child: GestureDetector(
                           onTap: () async {
                             final navigator = Navigator.of(context);
-                            final User? user = await UserService()
-                                .getUserInfo();
+                            final User? user =
+                                await UserService().getUserInfo();
                             if (user == null) {
                               if (!mounted) return;
                               // ignore: use_build_context_synchronously
@@ -619,8 +633,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         child: GestureDetector(
                           onTap: () async {
                             final navigator = Navigator.of(context);
-                            final User? user = await UserService()
-                                .getUserInfo();
+                            final User? user =
+                                await UserService().getUserInfo();
                             if (user == null) {
                               if (!mounted) return;
                               // ignore: use_build_context_synchronously
@@ -827,7 +841,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   final spacing = 12.w;
                   final itemWidth =
                       (totalWidth - spacing * (itemCountToShow - 1)) /
-                      itemCountToShow;
+                          itemCountToShow;
 
                   return SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
@@ -854,7 +868,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Widget _buildItem(String title, String assetPath, String subtitle) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final isSvg = assetPath.endsWith('.svg');
+    final resolvedAssetPath = assetPath;
+    final isSvg = resolvedAssetPath.endsWith('.svg');
+    final iconColor = theme.textTheme.bodyMedium?.color ?? Colors.black;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -863,9 +879,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           width: 48.w,
           height: 48.w,
           decoration: BoxDecoration(
-            color: isDark
-                ? const Color(0xFF2C2C2C)
-                : Colors.grey.shade200,
+            color: isDark ? const Color(0xFF2C2C2C) : Colors.grey.shade200,
             borderRadius: BorderRadius.circular(24.r),
           ),
           clipBehavior: Clip.antiAlias,
@@ -873,15 +887,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ? Padding(
                   padding: EdgeInsets.all(8.w),
                   child: SvgPicture.asset(
-                    assetPath,
+                    resolvedAssetPath,
                     fit: BoxFit.contain,
-                    colorFilter: ColorFilter.mode(
-                      theme.textTheme.bodyMedium?.color ?? Colors.black,
-                      BlendMode.srcIn,
-                    ),
+                    colorMapper: _QuickIconColorMapper(iconColor),
                   ),
                 )
-              : Image.asset(assetPath, fit: BoxFit.contain),
+              : Padding(
+                  padding: EdgeInsets.all(8.w),
+                  child: Image.asset(
+                    resolvedAssetPath,
+                    fit: BoxFit.contain,
+                    color: iconColor,
+                    filterQuality: FilterQuality.high,
+                  ),
+                ),
         ),
         SizedBox(height: 6.h),
         Text(

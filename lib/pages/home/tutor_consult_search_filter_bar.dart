@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import '../../services/tutor_service.dart';
 
 /// 筛选参数模型
 class TutorConsultSearchFilterParams {
   String keyword;
   String? gender;
   String? location;
+  String? country;
   String? status;
   String? level;
   double experienceYearsStart;
@@ -16,6 +18,7 @@ class TutorConsultSearchFilterParams {
     this.keyword = '',
     this.gender,
     this.location,
+    this.country,
     this.status,
     this.level,
     this.experienceYearsStart = 1,
@@ -28,6 +31,7 @@ class TutorConsultSearchFilterParams {
     keyword = '';
     gender = null;
     location = null;
+    country = null;
     status = null;
     level = null;
     experienceYearsStart = 1;
@@ -281,11 +285,19 @@ class _TutorConsultSearchFilterBarState
 }
 
 /// 筛选面板
-class FilterPanel extends StatelessWidget {
+class FilterPanel extends StatefulWidget {
   final TutorConsultSearchFilterParams params;
   final VoidCallback onChanged;
 
   const FilterPanel({super.key, required this.params, required this.onChanged});
+
+  @override
+  State<FilterPanel> createState() => _FilterPanelState();
+}
+
+class _FilterPanelState extends State<FilterPanel> {
+  List<LabelValue> _countries = [];
+  bool _loadingCountries = true;
 
   final List<LabelValue> genders = const [
     LabelValue("男", "2"),
@@ -315,6 +327,30 @@ class FilterPanel extends StatelessWidget {
     LabelValue("传承导师", "3"),
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    _loadCountries();
+  }
+
+  Future<void> _loadCountries() async {
+    try {
+      final list = await TutorService.getCountryList();
+      if (mounted) {
+        setState(() {
+          _countries = list;
+          _loadingCountries = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loadingCountries = false;
+        });
+      }
+    }
+  }
+
   Widget _buildGridOptions(
       BuildContext context, {
         required List<LabelValue> items,
@@ -330,7 +366,7 @@ class FilterPanel extends StatelessWidget {
         return GestureDetector(
           onTap: () {
             onSelect(isSelected ? '' : item.value);
-            onChanged();
+            widget.onChanged();
           },
           child: Container(
             width: itemWidth,
@@ -429,8 +465,8 @@ class FilterPanel extends StatelessWidget {
           _buildGridOptions(
             context,
             items: genders,
-            selected: params.gender,
-            onSelect: (v) => params.gender = v.isEmpty ? null : v,
+            selected: widget.params.gender,
+            onSelect: (v) => widget.params.gender = v.isEmpty ? null : v,
           ),
         ),
         _buildRow(
@@ -438,17 +474,33 @@ class FilterPanel extends StatelessWidget {
           _buildGridOptions(
             context,
             items: locations,
-            selected: params.location,
-            onSelect: (v) => params.location = v.isEmpty ? null : v,
+            selected: widget.params.location,
+            onSelect: (v) => widget.params.location = v.isEmpty ? null : v,
           ),
         ),
+        // 国家筛选
+        if (_countries.isNotEmpty)
+          _buildRow(
+            "国家",
+            _buildGridOptions(
+              context,
+              items: _countries,
+              selected: widget.params.country,
+              onSelect: (v) => widget.params.country = v.isEmpty ? null : v,
+            ),
+          ),
+        if (_loadingCountries)
+          _buildRow(
+            "国家",
+            const Text("加载中...", style: TextStyle(fontSize: 12, color: Colors.grey)),
+          ),
         _buildRow(
           "地位",
           _buildGridOptions(
             context,
             items: statuses,
-            selected: params.status,
-            onSelect: (v) => params.status = v.isEmpty ? null : v,
+            selected: widget.params.status,
+            onSelect: (v) => widget.params.status = v.isEmpty ? null : v,
           ),
         ),
         _buildRow(
@@ -456,8 +508,8 @@ class FilterPanel extends StatelessWidget {
           _buildGridOptions(
             context,
             items: levels,
-            selected: params.level,
-            onSelect: (v) => params.level = v.isEmpty ? null : v,
+            selected: widget.params.level,
+            onSelect: (v) => widget.params.level = v.isEmpty ? null : v,
           ),
         ),
         _buildRow(
@@ -466,12 +518,12 @@ class FilterPanel extends StatelessWidget {
             context: context,
             min: 1,
             max: 50,
-            start: params.experienceYearsStart,
-            end: params.experienceYearsEnd,
+            start: widget.params.experienceYearsStart,
+            end: widget.params.experienceYearsEnd,
             onChanged: (val) {
-              params.experienceYearsStart = val.start;
-              params.experienceYearsEnd = val.end;
-              onChanged();
+              widget.params.experienceYearsStart = val.start;
+              widget.params.experienceYearsEnd = val.end;
+              widget.onChanged();
             },
           ),
         ),
@@ -481,12 +533,12 @@ class FilterPanel extends StatelessWidget {
             context: context,
             min: 0,
             max: 100,
-            start: params.priceStart,
-            end: params.priceEnd,
+            start: widget.params.priceStart,
+            end: widget.params.priceEnd,
             onChanged: (val) {
-              params.priceStart = val.start;
-              params.priceEnd = val.end;
-              onChanged();
+              widget.params.priceStart = val.start;
+              widget.params.priceEnd = val.end;
+              widget.onChanged();
             },
           ),
         ),

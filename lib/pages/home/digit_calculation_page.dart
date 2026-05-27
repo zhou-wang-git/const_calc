@@ -11,11 +11,10 @@ import '../../dto/digit_calculation.dart';
 import '../../dto/digit_calculation_sum.dart';
 import '../../models/qimen_result.dart';
 import '../../services/digit_calculation_service.dart';
+import '../../services/coin_service.dart';
 import '../../util/date_util.dart';
-import '../../util/dialog_util.dart';
 import '../../util/twin_util.dart';
-import '../../util/app_styles.dart';
-import '../my/member_privilege_page.dart';
+import '../../util/coin_guard.dart';
 import 'fortune_detail_page.dart';
 
 class DigitCalculationPage extends StatefulWidget {
@@ -41,8 +40,6 @@ class _DigitCalculationPageState extends State<DigitCalculationPage>
   late AnimationController _rotate2;
   int _vipLevelId = 1;
   String _levelLabel = '基础会员';
-  String _shownCount = '';
-  QuotaInfo? _quotaInfo;
   static const vipMapper = {1: '普通会员', 2: '精英会员', 3: '至尊会员'};
 
   @override
@@ -68,45 +65,8 @@ class _DigitCalculationPageState extends State<DigitCalculationPage>
       });
     }
 
-    // 改用统一的配额检查
-    await _initQuotaCheck();
-  }
-
-  /// 初始化配额检查
-  Future<void> _initQuotaCheck() async {
-    try {
-      final User? user = await UserService().getUserInfo();
-      print('DigitCalculation _initQuotaCheck: user=${user?.id}, token=${user?.token?.substring(0, 10)}...');
-      if (user == null) {
-        print('DigitCalculation _initQuotaCheck: user is null, retrying in 2 seconds...');
-        // 用户信息未加载，等待2秒后重试
-        await Future.delayed(const Duration(seconds: 2));
-        if (!mounted) return;
-        await _initQuotaCheck(); // 递归重试一次
-        return;
-      }
-
-      if (!mounted) return;
-      final QuotaInfo? quotaInfo = await HttpUtil.request<QuotaInfo?>(
-        () => DigitCalculationService.checkQuota(),
-        context,
-        () => mounted,
-      );
-
-      print('DigitCalculation _initQuotaCheck: quotaInfo=${quotaInfo?.remaining}/${quotaInfo?.limit}');
-
-      if (!mounted) return;
-      setState(() {
-        _quotaInfo = quotaInfo;
-        // 统一显示格式: 剩余查询次数: X/Y 或 无限
-        if (quotaInfo != null) {
-          _shownCount = AppStyles.formatQuotaDisplay(quotaInfo.remaining, quotaInfo.limit);
-        }
-      });
-    } catch (e) {
-      print('DigitCalculation _initQuotaCheck error: $e');
-      // 配额检查失败，允许继续
-    }
+    // 预加载积分配置
+    await CoinGuard.preload();
   }
 
   @override
@@ -117,24 +77,6 @@ class _DigitCalculationPageState extends State<DigitCalculationPage>
   }
 
   void submit() async {
-    // 预检查配额
-    if (_quotaInfo != null && _quotaInfo!.remaining <= 0) {
-      final confirmed = await DialogUtil.confirm(
-        context,
-        title: "次数超限",
-        content: "本月免费次数已用完",
-        cancelText: "取消",
-        confirmText: "升级会员",
-      );
-
-      if (!mounted || !confirmed) return;
-      Navigator.push<bool>(
-        context,
-        MaterialPageRoute(builder: (_) => const MemberPrivilegePage()),
-      );
-      return; // 阻止提交
-    }
-
     // 修改验证逻辑：中文姓名或英文姓名至少填一个
     if (_nameController.text.isEmpty && _enNameController.text.isEmpty) {
       MessageUtil.info(context, '请至少输入中文姓名或英文姓名');
@@ -170,12 +112,21 @@ class _DigitCalculationPageState extends State<DigitCalculationPage>
       final childDate = DateTime.tryParse(birthday);
 
       if (parentDate != null && childDate != null) {
-        if (parentDate.isAfter(childDate) || parentDate.isAtSameMomentAs(childDate)) {
+        if (parentDate.isAfter(childDate) ||
+            parentDate.isAtSameMomentAs(childDate)) {
           MessageUtil.info(context, '$parentLabel的出生日期不能晚于或等于您的出生日期');
           return;
         }
       }
     }
+
+    // 积分消费检查
+    final canProceed = await CoinGuard.checkAndConsume(
+      context: context,
+      functionId: CoinService.funcDigitalCalc,
+      functionName: '数字测算',
+    );
+    if (!canProceed || !mounted) return;
 
     setState(() => isLoading = true);
 
@@ -203,27 +154,29 @@ class _DigitCalculationPageState extends State<DigitCalculationPage>
       print('parentYear: $parentYear');
       print('parentMonth: $parentMonth');
       print('parentDay: $parentDay');
-      print('birthday: ${birthdayList[0]}-${birthdayList[1]}-${birthdayList[2]}');
+      print(
+          'birthday: ${birthdayList[0]}-${birthdayList[1]}-${birthdayList[2]}');
 
       DigitCalculation digitCalculation =
           await DigitCalculationService.getResultList(
-            name: _nameController.text,
-            ename: _enNameController.text,
-            sex: gender.toString(),
-            type: '-1',
-            year: birthdayList[0],
-            month: birthdayList[1],
-            day: birthdayList[2],
-            curyear: DateUtil.getCurrentYear(),
-            curmonth: DateUtil.getCurrentMonth(),
-            curday: DateUtil.getCurrentDay(),
-            birthTime: birthTime,
-            isBirth: isBirth,
-            twinStatus: twinStatus,
-            parentYear: parentYear,
-            parentMonth: parentMonth,
-            parentDay: parentDay,
-          );
+        name: _nameController.text,
+        ename: _enNameController.text,
+        sex: gender.toString(),
+        type: '-1',
+        year: birthdayList[0],
+        month: birthdayList[1],
+        day: birthdayList[2],
+        curyear: DateUtil.getCurrentYear(),
+        curmonth: DateUtil.getCurrentMonth(),
+        curday: DateUtil.getCurrentDay(),
+        birthTime: birthTime,
+        isBirth: isBirth,
+        twinStatus: twinStatus,
+        parentYear: parentYear,
+        parentMonth: parentMonth,
+        parentDay: parentDay,
+        coinConsumeId: CoinGuard.lastConsumeId,
+      );
 
       // 临时调试：打印后端返回的调试信息
       print('=== DEBUG: 后端返回 ===');
@@ -233,29 +186,10 @@ class _DigitCalculationPageState extends State<DigitCalculationPage>
         showResult = true;
         detailId = int.parse(digitCalculation.id ?? '-1');
       });
-
-      // 刷新配额显示
-      await _initQuotaCheck();
     } catch (e, stack) {
       if (!mounted) return;
       if (e is ApiException) {
-        if (e.message == '本月免费次数已用完') {
-          final confirmed = await DialogUtil.confirm(
-            context,
-            title: "次数超限",
-            content: e.message,
-            cancelText: "取消",
-            confirmText: "升级会员",
-          );
-
-          if (!mounted || !confirmed) return;
-          Navigator.push<bool>(
-            context,
-            MaterialPageRoute(builder: (_) => const MemberPrivilegePage()),
-          );
-        } else {
-          MessageUtil.info(context, e.message);
-        }
+        MessageUtil.info(context, e.message);
       } else {
         MessageUtil.info(context, '请求错误');
       }
@@ -285,7 +219,8 @@ class _DigitCalculationPageState extends State<DigitCalculationPage>
         leading: IconButton(
           icon: Icon(
             Icons.arrow_back_ios_new,
-            color: theme.appBarTheme.iconTheme?.color ?? (isDark ? Colors.white : Colors.black),
+            color: theme.appBarTheme.iconTheme?.color ??
+                (isDark ? Colors.white : Colors.black),
           ),
           onPressed: () => Navigator.pop(context),
         ),
@@ -352,12 +287,7 @@ class _DigitCalculationPageState extends State<DigitCalculationPage>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SizedBox(height: 4),
-                    // 配额显示（移到标题上面）
-                    if (_quotaInfo != null) ...[
-                      _buildQuotaDisplay(),
-                      const SizedBox(height: 12),
-                    ],
+                    const SizedBox(height: 16),
                     Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: Center(
@@ -377,7 +307,8 @@ class _DigitCalculationPageState extends State<DigitCalculationPage>
                           _buildInputRow("中文姓名", _nameController),
                         ),
                         _buildCardWrapper(
-                          _buildInputRow("英文姓名", _enNameController, subtitle: "(中英二选一)"),
+                          _buildInputRow("英文姓名", _enNameController,
+                              subtitle: "(中英二选一)"),
                         ),
                         _buildCardWrapper(
                           _buildPickerRow("出生日期", birthday, _pickDate),
@@ -399,17 +330,11 @@ class _DigitCalculationPageState extends State<DigitCalculationPage>
                     ),
                     const SizedBox(height: 12),
                     Center(
-                      child: GestureDetector(
-                        onTap: submit,
-                        child: Image.asset(
-                          'assets/icons/start.png',
-                          width: 240,
-                          height: 50,
-                          fit: BoxFit.contain,
-                        ),
-                      ),
+                      child: _buildSubmitButton(),
                     ),
-                    const SizedBox(height: 100),
+                    SizedBox(
+                      height: 16 + MediaQuery.paddingOf(context).bottom,
+                    ),
                   ],
                 ),
               ),
@@ -422,11 +347,13 @@ class _DigitCalculationPageState extends State<DigitCalculationPage>
     );
   }
 
-  Widget _buildInputRow(String label, TextEditingController controller, {String? subtitle}) {
+  Widget _buildInputRow(String label, TextEditingController controller,
+      {String? subtitle}) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final inputBgColor = isDark ? theme.cardTheme.color : Colors.white;
-    final inputTextColor = isDark ? const Color(0xFFFFD54F) : const Color(0xFFFFC107);
+    final inputTextColor =
+        isDark ? const Color(0xFFFFD54F) : const Color(0xFFFFC107);
 
     return SizedBox(
       height: 50,
@@ -455,24 +382,27 @@ class _DigitCalculationPageState extends State<DigitCalculationPage>
             ),
           ),
           Expanded(
-            child: TextField(
-              controller: controller,
-              cursorColor: Colors.grey,
-              decoration: InputDecoration(
-                hintText: "请输入$label",
-                hintStyle: TextStyle(color: inputTextColor.withOpacity(0.6)),
-                filled: true,
-                fillColor: inputBgColor,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(30),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
-                ),
+            child: Container(
+              alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              height: double.infinity,
+              decoration: BoxDecoration(
+                color: inputBgColor,
+                borderRadius: BorderRadius.circular(30),
               ),
-              style: TextStyle(color: inputTextColor),
+              child: TextField(
+                controller: controller,
+                cursorColor: Colors.grey,
+                textAlignVertical: TextAlignVertical.center,
+                decoration: InputDecoration(
+                  isCollapsed: true,
+                  hintText: "请输入$label",
+                  hintStyle: TextStyle(color: inputTextColor),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                style: TextStyle(color: inputTextColor),
+              ),
             ),
           ),
         ],
@@ -484,7 +414,8 @@ class _DigitCalculationPageState extends State<DigitCalculationPage>
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final pickerBgColor = isDark ? theme.cardTheme.color : Colors.white;
-    final pickerTextColor = isDark ? const Color(0xFFFFD54F) : const Color(0xFFFFC107);
+    final pickerTextColor =
+        isDark ? const Color(0xFFFFD54F) : const Color(0xFFFFC107);
 
     return SizedBox(
       height: 50,
@@ -529,7 +460,8 @@ class _DigitCalculationPageState extends State<DigitCalculationPage>
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final labelColor = theme.textTheme.bodyLarge?.color;
-    final radioActiveColor = isDark ? const Color(0xFFFFD54F) : const Color(0xFFFFC107);
+    final radioActiveColor =
+        isDark ? const Color(0xFFFFD54F) : const Color(0xFFFFC107);
 
     return SizedBox(
       height: 50,
@@ -618,7 +550,8 @@ class _DigitCalculationPageState extends State<DigitCalculationPage>
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final labelColor = theme.textTheme.bodyLarge?.color;
-    final radioActiveColor = isDark ? const Color(0xFFFFD54F) : const Color(0xFFFFC107);
+    final radioActiveColor =
+        isDark ? const Color(0xFFFFD54F) : const Color(0xFFFFC107);
 
     return SizedBox(
       height: 50,
@@ -765,19 +698,54 @@ class _DigitCalculationPageState extends State<DigitCalculationPage>
     );
   }
 
-  Widget _buildQuotaDisplay() {
-    final screenWidth = MediaQuery.of(context).size.width;
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(screenWidth * 0.03),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        AppStyles.formatQuotaDisplay(_quotaInfo!.remaining, _quotaInfo!.limit),
-        textAlign: TextAlign.center,
-        style: AppStyles.getQuotaTextStyle(screenWidth, context),
-      ),
+  /// 构建带积分角标的提交按钮
+  Widget _buildSubmitButton() {
+    final balance = CoinService.getCachedBalance();
+    final config = CoinService.getCachedConfig();
+    final coins = config?.getFunctionCost(CoinService.funcDigitalCalc) ?? 3;
+    final isFreeUser = balance?.isFreeUser ?? false;
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        GestureDetector(
+          onTap: submit,
+          child: Image.asset(
+            'assets/icons/start.png',
+            width: 240,
+            height: 50,
+            fit: BoxFit.contain,
+          ),
+        ),
+        // 积分角标（免费用户不显示）
+        if (!isFreeUser && coins > 0)
+          Positioned(
+            top: -8,
+            right: -8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: Colors.orange,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.2),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Text(
+                '$coins能量点',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 

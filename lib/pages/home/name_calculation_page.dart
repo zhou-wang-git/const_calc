@@ -6,13 +6,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../../handler/api_exception.dart';
-import '../../models/qimen_result.dart';
 import '../../services/digit_calculation_service.dart';
+import '../../services/coin_service.dart';
 import '../../util/date_util.dart';
-import '../../util/dialog_util.dart';
-import '../../util/http_util.dart';
-import '../../util/app_styles.dart';
-import '../my/member_privilege_page.dart';
+import '../../util/coin_guard.dart';
 import 'name_result_page.dart';
 
 class NameCalculationPage extends StatefulWidget {
@@ -28,55 +25,14 @@ class _NameCalculationPageState extends State<NameCalculationPage> {
   String birthday = "请选择";
   String birthTime = "请选择";
   int gender = 0;
-  QuotaInfo? _quotaInfo;
 
   @override
   void initState() {
     super.initState();
-    _initQuotaCheck();
-  }
-
-  /// 初始化配额检查
-  Future<void> _initQuotaCheck() async {
-    try {
-      if (!mounted) return;
-      final QuotaInfo? quotaInfo = await HttpUtil.request<QuotaInfo?>(
-        () => DigitCalculationService.checkNameQuota(),
-        context,
-        () => mounted,
-      );
-
-      print('NameCalculation _initQuotaCheck: quotaInfo=${quotaInfo?.remaining}/${quotaInfo?.limit}');
-
-      if (!mounted) return;
-      setState(() {
-        _quotaInfo = quotaInfo;
-      });
-    } catch (e) {
-      print('NameCalculation _initQuotaCheck error: $e');
-    }
+    CoinGuard.preload();
   }
 
   Future<void> _submit() async {
-    // 预检查配额
-    if (_quotaInfo != null && _quotaInfo!.remaining <= 0) {
-      final confirmed = await DialogUtil.confirm(
-        context,
-        title: '提示',
-        content: '您的查询次数已用完，是否前往开通会员？',
-        confirmText: '前往开通',
-        cancelText: '取消',
-      );
-      if (confirmed == true) {
-        if (!mounted) return;
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const MemberPrivilegePage()),
-        );
-      }
-      return;
-    }
-
     if (_surnameController.text.isEmpty ||
         _nameController.text.isEmpty ||
         birthday == "请选择" ||
@@ -94,6 +50,15 @@ class _NameCalculationPageState extends State<NameCalculationPage> {
       MessageUtil.info(context, '名必须是中文');
       return;
     }
+
+    // 积分消费检查
+    final canProceed = await CoinGuard.checkAndConsume(
+      context: context,
+      functionId: CoinService.funcNameCalc,
+      functionName: '姓名批算',
+    );
+    if (!canProceed || !mounted) return;
+
     final navigator = Navigator.of(context);
 
     try {
@@ -108,6 +73,7 @@ class _NameCalculationPageState extends State<NameCalculationPage> {
         lastName: _nameController.text,
         sex: gender.toString(),
         hm: birthTime,
+        coinConsumeId: CoinGuard.lastConsumeId,
       );
 
       if (!mounted) return;
@@ -174,7 +140,8 @@ class _NameCalculationPageState extends State<NameCalculationPage> {
         leading: IconButton(
           icon: Icon(
             Icons.arrow_back_ios_new,
-            color: theme.appBarTheme.iconTheme?.color ?? (isDark ? Colors.white : Colors.black),
+            color: theme.appBarTheme.iconTheme?.color ??
+                (isDark ? Colors.white : Colors.black),
           ),
           onPressed: () => Navigator.pop(context),
         ),
@@ -203,9 +170,6 @@ class _NameCalculationPageState extends State<NameCalculationPage> {
               padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
               child: Column(
                 children: [
-                  // 显示剩余查询次数
-                  if (_quotaInfo != null) _buildQuotaInfo(),
-                  if (_quotaInfo != null) const SizedBox(height: 12),
                   Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: Center(
@@ -229,15 +193,7 @@ class _NameCalculationPageState extends State<NameCalculationPage> {
                   ),
                   _buildCardWrapper(_buildGenderSelector()),
                   const SizedBox(height: 12),
-                  GestureDetector(
-                    onTap: _submit,
-                    child: Image.asset(
-                      'assets/icons/start.png',
-                      width: 240,
-                      height: 50,
-                      fit: BoxFit.contain,
-                    ),
-                  ),
+                  _buildSubmitButton(),
                 ],
               ),
             ),
@@ -251,14 +207,15 @@ class _NameCalculationPageState extends State<NameCalculationPage> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final inputBgColor = isDark ? theme.cardTheme.color : Colors.white;
-    final inputTextColor = isDark ? const Color(0xFFFFD54F) : const Color(0xFFFFC107);
+    final inputTextColor =
+        isDark ? const Color(0xFFFFD54F) : const Color(0xFFFFC107);
 
     return SizedBox(
       height: 50,
       child: Row(
         children: [
           SizedBox(
-            width: 80.w,
+            width: 100,
             child: Center(
               child: Text(
                 label,
@@ -267,29 +224,25 @@ class _NameCalculationPageState extends State<NameCalculationPage> {
             ),
           ),
           Expanded(
-            child: TextField(
-              controller: controller,
-              cursorColor: theme.colorScheme.primary,
-              style: TextStyle(color: inputTextColor),
-              decoration: InputDecoration(
-                hintText: "请输入$label",
-                hintStyle: TextStyle(color: inputTextColor.withOpacity(0.6)),
-                filled: true,
-                fillColor: inputBgColor,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(30),
-                  borderSide: BorderSide.none,
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(30),
-                  borderSide: BorderSide(
-                    color: theme.colorScheme.primary.withOpacity(0.6),
-                    width: 1,
-                  ),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
+            child: Container(
+              alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              height: double.infinity,
+              decoration: BoxDecoration(
+                color: inputBgColor,
+                borderRadius: BorderRadius.circular(30),
+              ),
+              child: TextField(
+                controller: controller,
+                cursorColor: theme.colorScheme.primary,
+                textAlignVertical: TextAlignVertical.center,
+                style: TextStyle(color: inputTextColor),
+                decoration: InputDecoration(
+                  isCollapsed: true,
+                  hintText: "请输入$label",
+                  hintStyle: TextStyle(color: inputTextColor),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.zero,
                 ),
               ),
             ),
@@ -303,14 +256,15 @@ class _NameCalculationPageState extends State<NameCalculationPage> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final pickerBgColor = isDark ? theme.cardTheme.color : Colors.white;
-    final pickerTextColor = isDark ? const Color(0xFFFFD54F) : const Color(0xFFFFC107);
+    final pickerTextColor =
+        isDark ? const Color(0xFFFFD54F) : const Color(0xFFFFC107);
 
     return SizedBox(
       height: 50,
       child: Row(
         children: [
           SizedBox(
-            width: 80.w,
+            width: 100,
             child: Center(
               child: Text(
                 label,
@@ -348,14 +302,15 @@ class _NameCalculationPageState extends State<NameCalculationPage> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final labelColor = theme.textTheme.bodyLarge?.color;
-    final radioActiveColor = isDark ? const Color(0xFFFFD54F) : const Color(0xFFFFC107);
+    final radioActiveColor =
+        isDark ? const Color(0xFFFFD54F) : const Color(0xFFFFC107);
 
     return SizedBox(
       height: 50.h,
       child: Row(
         children: [
           SizedBox(
-            width: 80.w,
+            width: 100,
             child: Center(
               child: Text(
                 "性别",
@@ -407,20 +362,54 @@ class _NameCalculationPageState extends State<NameCalculationPage> {
     );
   }
 
-  /// 构建剩余查询次数显示
-  Widget _buildQuotaInfo() {
-    final screenWidth = MediaQuery.of(context).size.width;
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(screenWidth * 0.03),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        AppStyles.formatQuotaDisplay(_quotaInfo!.remaining, _quotaInfo!.limit),
-        textAlign: TextAlign.center,
-        style: AppStyles.getQuotaTextStyle(screenWidth, context),
-      ),
+  /// 构建带积分角标的提交按钮
+  Widget _buildSubmitButton() {
+    final balance = CoinService.getCachedBalance();
+    final config = CoinService.getCachedConfig();
+    final coins = config?.getFunctionCost(CoinService.funcNameCalc) ?? 5;
+    final isFreeUser = balance?.isFreeUser ?? false;
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        GestureDetector(
+          onTap: _submit,
+          child: Image.asset(
+            'assets/icons/start.png',
+            width: 240,
+            height: 50,
+            fit: BoxFit.contain,
+          ),
+        ),
+        // 积分角标（免费用户不显示）
+        if (!isFreeUser && coins > 0)
+          Positioned(
+            top: -8,
+            right: -8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: Colors.orange,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.2),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Text(
+                '$coins能量点',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

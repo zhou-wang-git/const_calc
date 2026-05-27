@@ -58,6 +58,7 @@ class _MyAppState extends State<MyApp> {
       builder: (context, child) {
         return MaterialApp(
           debugShowCheckedModeBanner: false,
+          title: '数易赋能',
           home: const MainTabPage(),
 
           // 本地化
@@ -162,8 +163,8 @@ class _MainTabPageState extends State<MainTabPage> {
 
   final List<Widget> _pages = const [
     HomePage(),
-    LuckPage(),
-    LibraryPage(),
+    LuckPage(showBackButton: false),
+    LibraryPage(showBackButton: false),
     ProfilePage(),
   ];
 
@@ -179,11 +180,11 @@ class _MainTabPageState extends State<MainTabPage> {
     // ✅ 不清除缓存，使用现有缓存（登录时已获取）
     // 如果缓存为空，getUserInfo() 会自动调用 API
     final User? user = await UserService().getUserInfo();
-    if (user == null && !mounted) {
+    if (user == null || !mounted) {
       return;
     }
 
-    if (AuthService().isLoggedIn && (user?.year == null || user!.year.isEmpty || user.year == '0')) {
+    if (AuthService().isLoggedIn && (user.year.isEmpty || user.year == '0')) {
       await Future.delayed(const Duration(seconds: 3));
       if (!mounted) return;
       Navigator.push(

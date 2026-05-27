@@ -1,5 +1,70 @@
 import 'order.dart';
 
+class MallBinding {
+  final bool isBound;
+  final String kccUserId;
+  final String mallEmail;
+  final String mallHandle;
+  final String mallDisplayName;
+  final String mallClientId;
+  final String mallWalletId;
+  final int mallBoundAt;
+  final bool hasPassword;
+  final int mallPasswordUpdatedAt;
+  final String preferredIdentifier;
+
+  const MallBinding({
+    this.isBound = false,
+    this.kccUserId = '',
+    this.mallEmail = '',
+    this.mallHandle = '',
+    this.mallDisplayName = '',
+    this.mallClientId = 'bigk_wallet',
+    this.mallWalletId = '',
+    this.mallBoundAt = 0,
+    this.hasPassword = false,
+    this.mallPasswordUpdatedAt = 0,
+    this.preferredIdentifier = '',
+  });
+
+  factory MallBinding.fromJson(Map<String, dynamic> json) {
+    final mallEmail = json['mall_email']?.toString() ?? '';
+    final mallHandle = json['mall_handle']?.toString() ?? '';
+
+    return MallBinding(
+      isBound: json['is_bound'] == true || json['mall_bound'] == 1,
+      kccUserId: json['kcc_user_id']?.toString() ?? '',
+      mallEmail: mallEmail,
+      mallHandle: mallHandle,
+      mallDisplayName: json['mall_display_name']?.toString() ?? '',
+      mallClientId: json['mall_client_id']?.toString() ?? 'bigk_wallet',
+      mallWalletId: json['mall_wallet_id']?.toString() ?? '',
+      mallBoundAt: json['mall_bound_at'] ?? 0,
+      hasPassword:
+          json['has_password'] == true || json['has_mall_password'] == 1,
+      mallPasswordUpdatedAt: json['mall_password_updated_at'] ?? 0,
+      preferredIdentifier: json['preferred_identifier']?.toString() ??
+          (mallEmail.isNotEmpty ? mallEmail : mallHandle),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'is_bound': isBound,
+      'kcc_user_id': kccUserId,
+      'mall_email': mallEmail,
+      'mall_handle': mallHandle,
+      'mall_display_name': mallDisplayName,
+      'mall_client_id': mallClientId,
+      'mall_wallet_id': mallWalletId,
+      'mall_bound_at': mallBoundAt,
+      'has_password': hasPassword,
+      'mall_password_updated_at': mallPasswordUpdatedAt,
+      'preferred_identifier': preferredIdentifier,
+    };
+  }
+}
+
 class User {
   final int id;
   final String username;
@@ -40,10 +105,11 @@ class User {
   final String sex;
   final String realName;
   final Order? order;
-  final int twinStatus; // 0=不是双胞胎, 1=长, 2=幼
-  final String? parentYear; // 父母出生年份
-  final String? parentMonth; // 父母出生月份
-  final String? parentDay; // 父母出生日期
+  final int twinStatus;
+  final String? parentYear;
+  final String? parentMonth;
+  final String? parentDay;
+  final MallBinding mallBinding;
 
   User({
     required this.id,
@@ -89,9 +155,25 @@ class User {
     this.parentYear,
     this.parentMonth,
     this.parentDay,
+    this.mallBinding = const MallBinding(),
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
+    final mallBindingJson = json['mall_binding'] is Map<String, dynamic>
+        ? json['mall_binding'] as Map<String, dynamic>
+        : json['mall_binding'] is Map
+            ? Map<String, dynamic>.from(json['mall_binding'] as Map)
+            : <String, dynamic>{
+                'mall_bound': json['mall_bound'],
+                'kcc_user_id': json['kcc_user_id'],
+                'mall_email': json['mall_email'],
+                'mall_handle': json['mall_handle'],
+                'mall_display_name': json['mall_display_name'],
+                'mall_client_id': json['mall_client_id'],
+                'mall_wallet_id': json['mall_wallet_id'],
+                'mall_bound_at': json['mall_bound_at'],
+              };
+
     return User(
       id: json['id'] ?? 0,
       username: json['username'] ?? '',
@@ -132,12 +214,13 @@ class User {
       sex: json['sex']?.toString() ?? '',
       realName: json['real_name'] ?? '',
       order: json['order'] != null && json['order'] is Map
-          ? Order.fromJson(json['order'])
+          ? Order.fromJson(Map<String, dynamic>.from(json['order'] as Map))
           : null,
       twinStatus: json['twin_status'] ?? 0,
       parentYear: json['parent_year']?.toString(),
       parentMonth: json['parent_month']?.toString(),
       parentDay: json['parent_day']?.toString(),
+      mallBinding: MallBinding.fromJson(mallBindingJson),
     );
   }
 
@@ -181,12 +264,12 @@ class User {
       'vip_time': vipTime,
       'sex': sex,
       'real_name': realName,
-      'order': order?.toJson(), // ✅ 安全地序列化嵌套对象
+      'order': order?.toJson(),
       'twin_status': twinStatus,
       'parent_year': parentYear ?? '',
       'parent_month': parentMonth ?? '',
       'parent_day': parentDay ?? '',
+      'mall_binding': mallBinding.toJson(),
     };
   }
-
 }

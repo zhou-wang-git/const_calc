@@ -120,7 +120,7 @@ class _EditUserInfoPageState extends State<EditUserInfoPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               fieldBuilders[widget.fieldKey]!((val) => _value = val),
-              const SizedBox(height: 28),
+              const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
                 height: 48,

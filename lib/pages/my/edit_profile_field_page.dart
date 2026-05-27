@@ -136,7 +136,7 @@ class _EditProfileFieldPageState extends State<EditProfileFieldPage> {
               ),
 
             const Divider(height: 1, color: Color(0xFFF0F0F0)),
-            const SizedBox(height: 24),
+            const SizedBox(height: 12),
 
             // 保存按钮
             SizedBox(

@@ -1,0 +1,7 @@
+<IfModule mod_headers.c>
+  <FilesMatch "^(index\.html|flutter_bootstrap\.js|flutter\.js|main\.dart\.js|manifest\.json|flutter_service_worker\.js|version\.json|AssetManifest\.json|FontManifest\.bin\.json|FontManifest\.json)$">
+    Header set Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
+    Header set Pragma "no-cache"
+    Header set Expires "0"
+  </FilesMatch>
+</IfModule>

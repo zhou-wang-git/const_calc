@@ -376,7 +376,7 @@ class _SelectAvatarPageState extends State<SelectAvatarPage> {
               ),
             ),
 
-            const SizedBox(height: 30),
+            const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
               height: 48,

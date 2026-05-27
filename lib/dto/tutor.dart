@@ -9,6 +9,7 @@ class Tutor {
   final String levelName;
   final int experienceYears;
   final String location;
+  final String country;
   final String background;
   final int sex;
   final int recommendStatus;
@@ -16,6 +17,9 @@ class Tutor {
   final int addTime;
   final String wx;
   final String wa;
+  final String website;
+  final String contactPriority;
+  final String waTemplate;
   final String line;
   final String tagIds;
   final String tagNames;
@@ -34,6 +38,7 @@ class Tutor {
     required this.levelName,
     required this.experienceYears,
     required this.location,
+    required this.country,
     required this.background,
     required this.sex,
     required this.recommendStatus,
@@ -41,6 +46,9 @@ class Tutor {
     required this.addTime,
     required this.wx,
     required this.wa,
+    required this.website,
+    required this.contactPriority,
+    required this.waTemplate,
     required this.line,
     required this.tagIds,
     required this.tagNames,
@@ -61,13 +69,19 @@ class Tutor {
       levelName: json['level_name'] ?? '',
       experienceYears: json['experience_years'] ?? 0,
       location: json['location'] ?? '',
+      country: json['country'] ?? '',
       background: json['background'] ?? '',
       sex: json['sex'] ?? 0,
       recommendStatus: json['recommend_status'] ?? 0,
-      hourlyConsultationFee: json['hourly_consultation_fee']?.toString() ?? '0.00',
+      hourlyConsultationFee:
+          json['hourly_consultation_fee']?.toString() ?? '0.00',
       addTime: json['add_time'] ?? 0,
       wx: json['wx'] ?? '',
       wa: json['wa'] ?? '',
+      website: json['website'] ?? '',
+      contactPriority:
+          json['contact_priority'] ?? 'email,website,wa,line,wx,mobile',
+      waTemplate: json['wa_template'] ?? '',
       line: json['line'] ?? '',
       tagIds: json['tag_ids'] ?? '',
       tagNames: json['tag_names'] ?? '',
@@ -89,6 +103,7 @@ class Tutor {
       'level_name': levelName,
       'experience_years': experienceYears,
       'location': location,
+      'country': country,
       'background': background,
       'sex': sex,
       'recommend_status': recommendStatus,
@@ -96,6 +111,9 @@ class Tutor {
       'add_time': addTime,
       'wx': wx,
       'wa': wa,
+      'website': website,
+      'contact_priority': contactPriority,
+      'wa_template': waTemplate,
       'line': line,
       'tag_ids': tagIds,
       'tag_names': tagNames,

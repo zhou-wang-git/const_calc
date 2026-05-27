@@ -1,6 +1,6 @@
-import 'package:auto_size_text/auto_size_text.dart';
 import 'package:const_calc/services/http_service.dart';
 import 'package:const_calc/util/message_util.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -8,23 +8,212 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../dto/Tutor.dart';
 
-final Map<int, String> gradeMapper = {1: '启蒙导师', 2: '大宗导师', 3: '传承导师'};
+final Map<int, String> gradeMapper = {
+  1: '启蒙导师',
+  2: '大宗导师',
+  3: '传承导师',
+};
 
 class TutorDetailPage extends StatelessWidget {
   final Tutor tutor;
 
   const TutorDetailPage({super.key, required this.tutor});
 
+  Future<void> _handleBooking(BuildContext context) async {
+    final priorityList =
+        tutor.contactPriority.split(',').map((item) => item.trim()).toList();
+
+    final contactMethods = <String, String>{
+      'email': tutor.email,
+      'website': tutor.website,
+      'wa': tutor.wa,
+      'line': tutor.line,
+      'wx': tutor.wx,
+      'mobile': tutor.mobile,
+    };
+
+    String? selectedType;
+    String? selectedValue;
+
+    for (final type in priorityList) {
+      final value = contactMethods[type]?.trim() ?? '';
+      if (value.isNotEmpty) {
+        selectedType = type;
+        selectedValue = value;
+        break;
+      }
+    }
+
+    if (selectedType == null || selectedValue == null) {
+      MessageUtil.info(context, '暂无可用联系方式');
+      return;
+    }
+
+    try {
+      await HttpService.postForm<void>(
+        '/apis/getContactNum',
+        {'id': tutor.id.toString()},
+        fromData: (_) {},
+      );
+    } catch (_) {}
+
+    Uri? uri;
+    String? fallbackClipboardText;
+
+    switch (selectedType) {
+      case 'email':
+        final subject = '预约咨询 - 数易赋能';
+        final body = _buildEmailTemplate();
+        uri = Uri(
+          scheme: 'mailto',
+          path: selectedValue,
+          queryParameters: {
+            'subject': subject,
+            'body': body,
+          },
+        );
+        fallbackClipboardText = '收件邮箱：$selectedValue\n主题：$subject\n\n$body';
+        break;
+      case 'website':
+        var url = selectedValue;
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+          url = 'https://$url';
+        }
+        uri = Uri.parse(url);
+        break;
+      case 'wa':
+        final message = _buildWhatsAppTemplate();
+        uri = _buildWhatsAppUri(selectedValue, message: message);
+        fallbackClipboardText = 'WhatsApp：$selectedValue\n\n$message';
+        break;
+      case 'line':
+        final id = selectedValue.startsWith('@')
+            ? selectedValue.substring(1)
+            : selectedValue;
+        uri = Uri.parse('https://line.me/R/ti/p/~$id');
+        break;
+      case 'wx':
+        await Clipboard.setData(ClipboardData(text: selectedValue));
+        if (!context.mounted) return;
+        MessageUtil.info(context, '微信号已复制：$selectedValue');
+        return;
+      case 'mobile':
+        uri = Uri(scheme: 'tel', path: selectedValue);
+        break;
+    }
+
+    if (uri == null) return;
+
+    var opened = false;
+    try {
+      final mode =
+          kIsWeb ? LaunchMode.platformDefault : LaunchMode.externalApplication;
+      opened = await launchUrl(uri, mode: mode);
+    } catch (_) {
+      opened = false;
+    }
+
+    if (opened) return;
+
+    final clipboardText = fallbackClipboardText ?? selectedValue;
+    await Clipboard.setData(ClipboardData(text: clipboardText));
+    if (!context.mounted) return;
+    MessageUtil.info(
+      context,
+      selectedType == 'email' ? '已复制邮箱和邮件模板' : '已复制联系方式',
+    );
+  }
+
+  String _buildEmailTemplate() {
+    return '$_displayName导师，您好：\n\n'
+        '我在数易赋能看到了您的资料，想进一步了解相关咨询内容。\n\n'
+        '咨询主题：\n'
+        '期望时间：\n'
+        '我的联系方式：\n\n'
+        '谢谢。';
+  }
+
+  String _buildWhatsAppTemplate() {
+    final customTemplate = tutor.waTemplate.trim();
+    if (customTemplate.isNotEmpty) {
+      return customTemplate;
+    }
+    return _buildEmailTemplate();
+  }
+
+  Uri? _buildWhatsAppUri(String input, {String? message}) {
+    final phone = _extractWhatsAppPhone(input);
+    if (phone == null || phone.isEmpty) {
+      return null;
+    }
+
+    final trimmedMessage = message?.trim() ?? '';
+    return Uri.https(
+      'api.whatsapp.com',
+      '/send',
+      {
+        'phone': phone,
+        if (trimmedMessage.isNotEmpty) 'text': trimmedMessage,
+      },
+    );
+  }
+
+  String? _extractWhatsAppPhone(String input) {
+    final trimmed = input.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      final parsed = Uri.tryParse(trimmed);
+      if (parsed != null && parsed.hasScheme) {
+        final host = parsed.host.toLowerCase();
+        if (host == 'wa.me' || host.endsWith('.wa.me')) {
+          for (final segment in parsed.pathSegments) {
+            final digits = segment.replaceAll(RegExp(r'\D'), '');
+            if (digits.isNotEmpty) {
+              return digits;
+            }
+          }
+          final phoneQuery =
+              parsed.queryParameters['phone']?.replaceAll(RegExp(r'\D'), '') ??
+                  '';
+          if (phoneQuery.isNotEmpty) {
+            return phoneQuery;
+          }
+        }
+        if (host.contains('whatsapp.com')) {
+          final phoneQuery =
+              parsed.queryParameters['phone']?.replaceAll(RegExp(r'\D'), '') ??
+                  '';
+          if (phoneQuery.isNotEmpty) {
+            return phoneQuery;
+          }
+        }
+      }
+    }
+
+    final normalized = trimmed.replaceAll(RegExp(r'\D'), '');
+    if (normalized.isEmpty) {
+      return null;
+    }
+    return normalized;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final textColor =
-        theme.textTheme.bodyLarge?.color ?? (isDark ? Colors.white : Colors.black);
-    final subTextColor =
-        theme.textTheme.bodyMedium?.color ?? (isDark ? Colors.white70 : Colors.black87);
-    final cardColor = theme.cardTheme.color ?? Colors.white;
+    final textColor = isDark
+        ? Colors.white
+        : theme.textTheme.bodyLarge?.color ?? Colors.black;
+    final subTextColor = isDark
+        ? Colors.white
+        : theme.textTheme.bodyMedium?.color ?? Colors.black87;
+    final cardColor = theme.cardColor;
+    final surfaceColor = theme.colorScheme.surface;
     final primaryColor = theme.colorScheme.primary;
+    const sectionSpacing = 12.0;
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
@@ -51,381 +240,554 @@ class TutorDetailPage extends StatelessWidget {
               ),
         ),
       ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
-          child: Column(
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final contentWidth = _maxContentWidth(constraints.maxWidth);
+          final introMinHeight = constraints.maxWidth >= 768 ? 240.0 : 180.0;
+
+          return ListView(
+            padding: EdgeInsets.fromLTRB(16.w, 12.h, 16.w, 24.h),
             children: [
-              // 头像 + 姓名 + 标签 + 地区 + 价格
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 0),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    ClipOval(
-                      child: Image.network(
-                        '${HttpService.domain}${tutor.avatar}',
-                        width: 80,
-                        height: 80,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Image.asset(
-                          'assets/icons/avatar.png',
-                          width: 80,
-                          height: 80,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
+              Align(
+                alignment: Alignment.topCenter,
+                child: SizedBox(
+                  width: contentWidth,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            tutor.chineseName,
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: textColor,
+                          _buildAvatar(80),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _buildHeaderInfo(
+                              textColor,
+                              subTextColor,
+                              isDark: isDark,
+                              compact: true,
                             ),
                           ),
-                          const SizedBox(height: 8),
-                          SizedBox(
-                            height: 25,
-                            child: Transform.translate(
-                              offset: const Offset(0, -4),
-                              child: Stack(
-                                alignment: Alignment.centerLeft,
-                                children: [
-                                  Image.asset(
-                                    'assets/icons/zs.png',
-                                    fit: BoxFit.contain,
-                                    height: 25,
-                                    color: isDark ? Colors.white70 : null,
+                          const SizedBox(width: 8),
+                          _buildPriceBadge(primaryColor),
+                        ],
+                      ),
+                      ...[
+                        const SizedBox(height: 12),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(0, 0, 0, 8),
+                          child: Row(
+                            children: [
+                              Text(
+                                '服务领域：',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: textColor,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Expanded(
+                                child: Text(
+                                  _serviceTags.join(' | '),
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: subTextColor,
                                   ),
-                                  Positioned(
-                                    left: 30,
-                                    child: Text(
-                                      gradeMapper[tutor.gradeId] ?? '',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: Color(0XFFBF6D1C),
-                                        fontSize: 14,
-                                      ),
-                                    ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      Container(
+                        decoration: BoxDecoration(
+                          color: cardColor,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: _buildCertificationHeader(
+                                primaryColor: primaryColor,
+                                subTextColor: subTextColor,
+                                isDark: isDark,
+                              ),
+                            ),
+                            Container(
+                              margin:
+                                  const EdgeInsets.symmetric(horizontal: 12),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              decoration: BoxDecoration(
+                                color: surfaceColor.withValues(
+                                  alpha: isDark ? 0.50 : 0.78,
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceAround,
+                                children: [
+                                  _buildLegacyInfoItem(
+                                    'assets/icons/exp.png',
+                                    _displayExperience,
+                                    '从业年限',
+                                    textColor: textColor,
+                                    subTextColor: subTextColor,
+                                    iconColor: isDark ? Colors.white70 : null,
+                                  ),
+                                  _buildLegacyInfoItem(
+                                    'assets/icons/gender.png',
+                                    _displayGender,
+                                    '性别',
+                                    textColor: textColor,
+                                    subTextColor: subTextColor,
+                                    iconColor: isDark ? Colors.white70 : null,
+                                  ),
+                                  _buildLegacyInfoItem(
+                                    'assets/icons/zodiac.png',
+                                    _displayLevel,
+                                    '等级',
+                                    textColor: textColor,
+                                    subTextColor: subTextColor,
+                                    iconColor: isDark ? Colors.white70 : null,
+                                  ),
+                                  _buildLegacyInfoItem(
+                                    'assets/icons/tel.png',
+                                    tutor.contactNum.toString(),
+                                    '联系次数',
+                                    textColor: textColor,
+                                    subTextColor: subTextColor,
+                                    iconColor: isDark ? Colors.white70 : null,
                                   ),
                                 ],
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 8),
-                          Transform.translate(
-                            offset: const Offset(0, -4),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Image.asset('assets/icons/location.png',
-                                    height: 16,
-                                    color: isDark ? Colors.white70 : null),
-                                const SizedBox(width: 8),
-                                Text(
-                                  tutor.location,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: subTextColor,
-                                  ),
+                            Container(
+                              margin: const EdgeInsets.only(
+                                left: 12,
+                                right: 12,
+                                top: 8,
+                                bottom: 12,
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 10,
+                              ),
+                              decoration: BoxDecoration(
+                                color: surfaceColor.withValues(
+                                  alpha: isDark ? 0.50 : 0.78,
                                 ),
-                              ],
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceAround,
+                                children: [
+                                  _BotconItem(label: '平台认证'),
+                                  _BotconItem(label: '能力评估'),
+                                  _BotconItem(label: '平台优选'),
+                                  _BotconItem(label: '优质服务'),
+                                ],
+                              ),
                             ),
-                          )
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: primaryColor,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Text(
-                        '\$ /时',
-                        // 金额直接使用 tutor.hourlyConsultationFee
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.white,
+                          ],
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // 服务领域
-              Padding(
-                padding: const EdgeInsets.fromLTRB(0, 0, 0, 8),
-                child: Row(
-                  children: [
-                    Text(
-                      '服务领域：',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: textColor,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Expanded(
-                      child: AutoSizeText(
-                        tutor.tagNames.replaceAll(',', ' | '),
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: subTextColor,
+                      const SizedBox(height: sectionSpacing),
+                      _buildSectionCard(
+                        backgroundColor: cardColor,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildDecoratedSectionTitle(
+                              title: '个人介绍',
+                              textColor: textColor,
+                              isDark: isDark,
+                            ),
+                            const SizedBox(height: 12),
+                            Container(
+                              width: double.infinity,
+                              constraints:
+                                  BoxConstraints(minHeight: introMinHeight),
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: surfaceColor.withValues(
+                                  alpha: isDark ? 0.50 : 0.78,
+                                ),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: Text(
+                                _displayBackground,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: subTextColor,
+                                  height: 1.75,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                        maxLines: 1,
-                        minFontSize: 8,
-                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // 认证模块
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 0),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      theme.colorScheme.surface,
-                      theme.colorScheme.surface.withOpacity(isDark ? 0.5 : 0.2),
-                    ],
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Image.asset('assets/icons/rzicon.png',
-                              height: 20,
-                              color: isDark ? Colors.white : null),
-                          const SizedBox(width: 6),
-                          Text(
-                            '认证导师',
+                      const SizedBox(height: sectionSpacing),
+                      SizedBox(
+                        height: 48,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: primaryColor,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(24),
+                            ),
+                          ),
+                          onPressed: () => _handleBooking(context),
+                          child: const Text(
+                            '预约',
                             style: TextStyle(
-                              color: primaryColor,
-                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
                               fontSize: 14,
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: AutoSizeText(
-                              '平台独家认证，并通过严格考核的高实力咨询师',
-                              style: TextStyle(
-                                color: subTextColor,
-                                fontSize: 12,
-                              ),
-                              maxLines: 1,
-                              minFontSize: 8,
-                              overflow: TextOverflow.visible,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 12),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        color: cardColor,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          _buildInfoItem(
-                            'assets/icons/exp.png',
-                            '${tutor.experienceYears}',
-                            '从业年限',
-                            textColor: textColor,
-                            subTextColor: subTextColor,
-                            iconColor: isDark ? Colors.white70 : null,
-                          ),
-                          _buildInfoItem(
-                            'assets/icons/gender.png',
-                            tutor.sex == 2 ? '男' : '女',
-                            '性别',
-                            textColor: textColor,
-                            subTextColor: subTextColor,
-                            iconColor: isDark ? Colors.white70 : null,
-                          ),
-                          _buildInfoItem(
-                            'assets/icons/zodiac.png',
-                            tutor.levelName,
-                            '等级',
-                            textColor: textColor,
-                            subTextColor: subTextColor,
-                            iconColor: isDark ? Colors.white70 : null,
-                          ),
-                          _buildInfoItem(
-                            'assets/icons/tel.png',
-                            tutor.contactNum.toString(),
-                            '联系次数',
-                            textColor: textColor,
-                            subTextColor: subTextColor,
-                            iconColor: isDark ? Colors.white70 : null,
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      margin:
-                          const EdgeInsets.only(left: 12, right: 12, top: 8, bottom: 12),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: theme.cardTheme.color ?? theme.colorScheme.surface,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: const [
-                          _BotconItem(label: '平台认证'),
-                          _BotconItem(label: '能力评估'),
-                          _BotconItem(label: '平台优选'),
-                          _BotconItem(label: '优质服务'),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // 个人介绍模块
-              Container(
-                width: double.infinity,
-                margin: const EdgeInsets.fromLTRB(0, 8, 0, 8),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surface,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  children: [
-                    const SizedBox(height: 16),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surface.withOpacity(isDark ? 0.8 : 0.3),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Image.asset('assets/icons/img4.png',
-                              height: 18, width: 18, color: isDark ? Colors.white70 : null),
-                          const SizedBox(width: 8),
-                          Text(
-                            '个人介绍',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              color: textColor,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Image.asset('assets/icons/img4.png',
-                              height: 18, width: 18, color: isDark ? Colors.white70 : null),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Padding(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                      child: Text(
-                        tutor.background,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: subTextColor,
-                          height: 1.6,
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-
-              Padding(
-                padding: const EdgeInsets.fromLTRB(0, 0, 0, 0),
-                child: SizedBox(
-                  height: 45,
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: primaryColor,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                    ),
-                    onPressed: () {
-                      showDialog(
-                        context: context,
-                        builder: (_) => ContactDialog(tutor: tutor),
-                      );
-                    },
-                    child: const Text(
-                      '点击查看联系方式',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                      ),
-                    ),
+                    ],
                   ),
                 ),
               ),
             ],
-          ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildAvatar(double size) {
+    return ClipOval(
+      child: Image.network(
+        '${HttpService.domain}${tutor.avatar}',
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Image.asset(
+          'assets/icons/avatar.png',
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
         ),
       ),
     );
   }
 
-  Widget _buildInfoItem(String iconPath, String value, String label,
-      {required Color textColor, required Color subTextColor, Color? iconColor}) {
+  Widget _buildHeaderInfo(
+    Color textColor,
+    Color subTextColor, {
+    required bool isDark,
+    bool compact = false,
+  }) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Image.asset(iconPath, height: 24, color: iconColor),
-        const SizedBox(height: 4),
         Text(
-          value,
+          _displayName,
           style: TextStyle(
-            color: textColor,
-            fontSize: 13,
+            fontSize: compact ? 16 : 22,
             fontWeight: FontWeight.bold,
+            color: textColor,
           ),
         ),
-        Text(label, style: TextStyle(color: subTextColor, fontSize: 11)),
+        const SizedBox(height: 8),
+        if (_displayGrade.isNotEmpty) ...[
+          _buildGradeBadge(isDark: isDark),
+          const SizedBox(height: 6),
+        ],
+        _buildLocationInfo(subTextColor),
       ],
     );
   }
+
+  Widget _buildGradeBadge({required bool isDark}) {
+    return SizedBox(
+      height: 25,
+      child: Transform.translate(
+        offset: const Offset(0, -2),
+        child: Stack(
+          alignment: Alignment.centerLeft,
+          children: [
+            Image.asset(
+              'assets/icons/zs.png',
+              fit: BoxFit.contain,
+              height: 25,
+            ),
+            Positioned(
+              left: 30,
+              child: Text(
+                _displayGrade,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Color(0XFFBF6D1C),
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLocationInfo(Color subTextColor) {
+    return Transform.translate(
+      offset: const Offset(0, -2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Image.asset(
+            'assets/icons/location.png',
+            height: 16,
+            color: subTextColor,
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              _displayLocation,
+              style: TextStyle(
+                fontSize: 12,
+                color: subTextColor,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCertificationHeader({
+    required Color primaryColor,
+    required Color subTextColor,
+    required bool isDark,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Image.asset(
+          'assets/icons/rzicon.png',
+          height: 18,
+          color: isDark ? Colors.white : null,
+        ),
+        const SizedBox(width: 6),
+        Text(
+          '认证导师',
+          style: TextStyle(
+            color: primaryColor,
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            '平台独家认证，并通过严格考核的高实力咨询师',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: subTextColor,
+              fontSize: 12,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDecoratedSectionTitle({
+    required String title,
+    required Color textColor,
+    required bool isDark,
+  }) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Image.asset(
+          'assets/icons/img4.png',
+          height: 18,
+          width: 18,
+          color: isDark ? Colors.white70 : null,
+        ),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: textColor,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Image.asset(
+          'assets/icons/img4.png',
+          height: 18,
+          width: 18,
+          color: isDark ? Colors.white70 : null,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPriceBadge(Color primaryColor) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: primaryColor,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        _displayPrice,
+        style: const TextStyle(
+          fontSize: 13,
+          color: Colors.white,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionCard({
+    required Widget child,
+    required Color backgroundColor,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+
+  Widget _buildLegacyInfoItem(
+    String iconPath,
+    String value,
+    String label, {
+    required Color textColor,
+    required Color subTextColor,
+    Color? iconColor,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Image.asset(iconPath, height: 24, color: iconColor),
+        const SizedBox(height: 4),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 60),
+          child: Text(
+            value,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: textColor,
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(color: subTextColor, fontSize: 11),
+        ),
+      ],
+    );
+  }
+
+  double _maxContentWidth(double width) {
+    if (width >= 1024) return 920;
+    if (width >= 768) return 760;
+    return width;
+  }
+
+  String get _displayName {
+    final chineseName = tutor.chineseName.trim();
+    if (chineseName.isNotEmpty) return chineseName;
+
+    final englishName = tutor.englishName.trim();
+    if (englishName.isNotEmpty) return englishName;
+
+    return '导师';
+  }
+
+  String get _displayGrade => gradeMapper[tutor.gradeId] ?? '';
+
+  String get _displayLocation {
+    final parts = <String>[];
+    final location = tutor.location.trim();
+    final country = tutor.country.trim();
+
+    if (location.isNotEmpty) parts.add(location);
+    if (country.isNotEmpty && country != location) parts.add(country);
+
+    return parts.isEmpty ? '地区待补充' : parts.join(' / ');
+  }
+
+  String get _displayPrice {
+    final fee = tutor.hourlyConsultationFee.trim();
+    if (fee.isEmpty || fee == '0' || fee == '0.0' || fee == '0.00') {
+      return '咨询费待定';
+    }
+    return '\$$fee / 时';
+  }
+
+  String get _displayExperience {
+    if (tutor.experienceYears <= 0) return '待补充';
+    return '${tutor.experienceYears}年';
+  }
+
+  String get _displayGender {
+    if (tutor.sex == 2) return '男';
+    if (tutor.sex == 1) return '女';
+    return '未填写';
+  }
+
+  String get _displayLevel {
+    final levelName = tutor.levelName.trim();
+    return levelName.isEmpty ? '待补充' : levelName;
+  }
+
+  String get _displayBackground {
+    final background = tutor.background.trim();
+    return background.isEmpty ? '暂无个人介绍' : background;
+  }
+
+  List<String> get _serviceTags => tutor.tagNames
+      .split(RegExp(r'[,|/]+'))
+      .map((tag) => tag.trim())
+      .where((tag) => tag.isNotEmpty)
+      .toList();
 }
 
 class _BotconItem extends StatelessWidget {
   final String label;
+
   const _BotconItem({required this.label});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final textColor =
-        theme.textTheme.bodySmall?.color ?? (isDark ? Colors.white70 : Colors.black87);
+    final textColor = isDark
+        ? Colors.white
+        : theme.textTheme.bodySmall?.color ?? Colors.black87;
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -447,176 +809,5 @@ class _BotconItem extends StatelessWidget {
         ),
       ],
     );
-  }
-}
-class ContactDialog extends StatefulWidget {
-  final Tutor tutor;
-  const ContactDialog({super.key, required this.tutor});
-
-  @override
-  State<ContactDialog> createState() => _ContactDialogState();
-}
-
-class _ContactDialogState extends State<ContactDialog> {
-  final List<String> tabs = ['微信', 'WA', 'Line', '邮件', '电话'];
-  int currentIndex = 0;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final textColor =
-        theme.textTheme.bodyLarge?.color ?? (isDark ? Colors.white : Colors.black);
-    final subColor =
-        theme.textTheme.bodySmall?.color ?? (isDark ? Colors.white70 : Colors.grey);
-    final primaryColor = theme.colorScheme.primary;
-
-    final Map<String, String> contactMap = {
-      '微信': widget.tutor.wx,
-      'WA': widget.tutor.wa,
-      'Line': widget.tutor.line,
-      '邮件': widget.tutor.email,
-      '电话': widget.tutor.mobile,
-    };
-
-    final String currentType = tabs[currentIndex];
-    final String contactValue = (contactMap[currentType] ?? '').trim();
-
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Container(
-        width: 320,
-        padding: const EdgeInsets.fromLTRB(12, 16, 12, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // 顶部 Tab
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: List.generate(tabs.length, (index) {
-                final selected = currentIndex == index;
-                return GestureDetector(
-                  onTap: () => setState(() => currentIndex = index),
-                  child: Text(
-                    tabs[index],
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: selected ? primaryColor : subColor,
-                    ),
-                  ),
-                );
-              }),
-            ),
-            const SizedBox(height: 20),
-
-            // 展示内容
-            Text(
-              contactValue.isNotEmpty ? contactValue : '暂无信息',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textColor),
-            ),
-            const SizedBox(height: 20),
-
-            // 唯一按钮
-            SizedBox(
-              width: 160,
-              height: 40,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: primaryColor,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                ),
-                onPressed: contactValue.isEmpty
-                    ? null
-                    : () async {
-                        final navigator = Navigator.of(context);
-
-                        await Clipboard.setData(ClipboardData(text: contactValue));
-
-                        bool opened = true;
-                        if (currentType == '微信') {
-                          opened = false;
-                        } else {
-                          opened = await _openContact(currentType, contactValue);
-                        }
-
-                        navigator.pop();
-
-                        if (currentType == '微信') {
-                          // ignore: use_build_context_synchronously
-                          MessageUtil.info(context, '微信号已复制');
-                        } else if (opened) {
-                          // ignore: use_build_context_synchronously
-                          MessageUtil.info(context, '已复制并尝试打开');
-                        } else {
-                          // ignore: use_build_context_synchronously
-                          MessageUtil.info(context, '内容已复制');
-                        }
-                      },
-                child: Text(
-                  currentType == '微信' ? '复制' : '打开',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 打开对应 App / 客户端，失败返回 false
-  Future<bool> _openContact(String type, String value) async {
-    try {
-      Uri? uri;
-
-      switch (type) {
-        case '邮件':
-          uri = Uri(scheme: 'mailto', path: value, queryParameters: {'subject': '咨询'});
-          break;
-
-        case '电话':
-          uri = Uri(scheme: 'tel', path: _normalizePhone(value));
-          break;
-
-        case 'WA':
-          final phone = _normalizePhone(value);
-          final primary = Uri.parse('whatsapp://send?phone=$phone');
-          if (await canLaunchUrl(primary)) return await launchUrl(primary);
-          uri = Uri.parse('https://wa.me/$phone');
-          break;
-
-        case 'Line':
-          final id = value.startsWith('@') ? value.substring(1) : value;
-          final primary = Uri.parse('line://ti/p/~$id');
-          if (await canLaunchUrl(primary)) return await launchUrl(primary);
-          uri = Uri.parse('https://line.me/R/ti/p/~$id');
-          break;
-
-        default:
-          uri = null;
-      }
-
-      if (uri == null) return false;
-      if (!await canLaunchUrl(uri)) return false;
-      return await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (_) {
-      return false;
-    }
-  }
-
-  String _normalizePhone(String input) {
-    final trimmed = input.trim();
-    if (trimmed.startsWith('+')) {
-      final digits = trimmed.substring(1).replaceAll(RegExp(r'\D'), '');
-      return '+$digits';
-    }
-    return trimmed.replaceAll(RegExp(r'\D'), '');
   }
 }

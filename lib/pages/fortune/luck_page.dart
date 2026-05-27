@@ -20,7 +20,10 @@ import 'luck_header_card.dart';
 import 'luck_main_person_tab.dart';
 
 class LuckPage extends StatefulWidget {
-  const LuckPage({super.key});
+  /// 是否显示返回按钮，底部导航栏进入时为 false
+  final bool showBackButton;
+
+  const LuckPage({super.key, this.showBackButton = true});
 
   @override
   FortunePageState createState() => FortunePageState();
@@ -512,6 +515,13 @@ class FortunePageState extends State<LuckPage>
           scrolledUnderElevation: 0,
           surfaceTintColor: Colors.transparent,
           centerTitle: true,
+          automaticallyImplyLeading: widget.showBackButton,
+          leading: widget.showBackButton
+              ? IconButton(
+                  icon: Icon(Icons.arrow_back_ios_new, color: theme.appBarTheme.titleTextStyle?.color),
+                  onPressed: () => Navigator.pop(context),
+                )
+              : null,
           title: Text(
             '我的运势',
             style: TextStyle(

@@ -285,9 +285,13 @@ class _OrderListPage extends State<OrderListPage> {
   String _mapPayMethod(int source) {
     switch (source) {
       case 1:
-        return '网页';
+        return 'Stripe (Web)';
       case 2:
-        return 'APP';
+        return 'Stripe (App)';
+      case 3:
+        return 'Apple Pay';
+      case 4:
+        return 'Google Play';
       default:
         return '其它';
     }

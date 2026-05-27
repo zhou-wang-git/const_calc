@@ -14,7 +14,7 @@
     This is a placeholder for base href that will be replaced by the value of
     the `--base-href` argument provided to `flutter build`.
   -->
-  <base href="/web/">
+  <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
@@ -34,8 +34,90 @@
 
   <title>数易赋能</title>
   <link rel="manifest" href="manifest.json">
+  <style>
+    input:autofill,
+    input:-webkit-autofill,
+    input:-webkit-autofill:hover,
+    input:-webkit-autofill:focus,
+    textarea:autofill,
+    textarea:-webkit-autofill,
+    textarea:-webkit-autofill:hover,
+    textarea:-webkit-autofill:focus,
+    select:autofill,
+    select:-webkit-autofill,
+    select:-webkit-autofill:hover,
+    select:-webkit-autofill:focus {
+      -webkit-text-fill-color: #1f1f1f;
+      -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+      box-shadow: 0 0 0 1000px #ffffff inset !important;
+      transition: background-color 9999s ease-out 0s;
+      caret-color: #1f1f1f;
+      border-radius: 999px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      input:autofill,
+      input:-webkit-autofill,
+      input:-webkit-autofill:hover,
+      input:-webkit-autofill:focus,
+      textarea:autofill,
+      textarea:-webkit-autofill,
+      textarea:-webkit-autofill:hover,
+      textarea:-webkit-autofill:focus,
+      select:autofill,
+      select:-webkit-autofill,
+      select:-webkit-autofill:hover,
+      select:-webkit-autofill:focus {
+        -webkit-text-fill-color: #ffffff;
+        -webkit-box-shadow: 0 0 0 1000px #1f1f1f inset !important;
+        box-shadow: 0 0 0 1000px #1f1f1f inset !important;
+        caret-color: #ffffff;
+      }
+    }
+  </style>
 </head>
 <body>
-  <script src="flutter_bootstrap.js" async></script>
+  <script>
+    (function () {
+      let bootstrapLoaded = false;
+
+      function loadFlutterBootstrap() {
+        if (bootstrapLoaded) {
+          return;
+        }
+        bootstrapLoaded = true;
+
+        const script = document.createElement('script');
+        script.src = 'flutter_bootstrap.js';
+        script.async = true;
+        document.body.appendChild(script);
+      }
+
+      async function cleanupLegacyCaches() {
+        try {
+          if ('serviceWorker' in navigator) {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(
+              registrations.map((registration) => registration.unregister()),
+            );
+          }
+        } catch (error) {
+          console.warn('Service worker cleanup failed', error);
+        }
+
+        try {
+          if ('caches' in window) {
+            const cacheKeys = await caches.keys();
+            await Promise.all(cacheKeys.map((key) => caches.delete(key)));
+          }
+        } catch (error) {
+          console.warn('Cache cleanup failed', error);
+        }
+      }
+
+      setTimeout(loadFlutterBootstrap, 1500);
+      cleanupLegacyCaches().finally(loadFlutterBootstrap);
+    })();
+  </script>
 </body>
 </html>

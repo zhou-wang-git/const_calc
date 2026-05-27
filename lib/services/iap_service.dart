@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:in_app_purchase_storekit/in_app_purchase_storekit.dart';
+import 'package:in_app_purchase_android/in_app_purchase_android.dart';
+import 'package:in_app_purchase_android/billing_client_wrappers.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
@@ -10,38 +12,81 @@ import 'payment_service.dart';
 import 'auth_service.dart';
 import 'http_service.dart';
 
-/// iOS Apple In-App Purchase 服务
+/// iOS/Android In-App Purchase 服务
+/// 支持 Apple App Store 和 Google Play Store
 class IAPService implements PaymentService {
   final InAppPurchase _iap = InAppPurchase.instance;
   StreamSubscription<List<PurchaseDetails>>? _subscription;
 
-  /// 产品 ID 映射（标准化版本）
+  /// 初始化 IAP 服务（必须在应用启动时调用）
+  Future<void> initialize() async {
+    print('[IAP] Initializing IAP service...');
+
+    // 检查 IAP 是否可用
+    final available = await _iap.isAvailable();
+    if (!available) {
+      print('[IAP] IAP not available on this device');
+      return;
+    }
+
+    print('[IAP] IAP service initialized and ready');
+  }
+
+  /// iOS 产品 ID 映射（Apple App Store）
   ///
   /// ✅ 符合 Apple 命名规范：{bundleId}.{product}
   /// ✅ 产品类型：非续订订阅（Non-renewing subscriptions）
-  ///
-  /// 映射规则：{vipName}_{vipTime} -> App Store 产品 ID
-  /// - vipName: elite (精英) / supreme (至尊)
-  /// - vipTime: 后端传递的时长（天数）
-  static const Map<String, String> _productIdMap = {
+  static const Map<String, String> _iosProductIdMap = {
     // 精英会员（vipTime 为天数）
-    'elite_30': 'app.numforlife.com.elite.1month',    // 精英会员 1 个月
-    'elite_90': 'app.numforlife.com.elite.3months',   // 精英会员 3 个月
-    'elite_180': 'app.numforlife.com.elite.6months',  // 精英会员 6 个月
-    'elite_365': 'app.numforlife.com.elite.1year',    // 精英会员 12 个月
+    'elite_30': 'app.numforlife.com.elite.1month',
+    'elite_90': 'app.numforlife.com.elite.3months',
+    'elite_180': 'app.numforlife.com.elite.6months',
+    'elite_365': 'app.numforlife.com.elite.1year',
 
     // 至尊会员（vipTime 为天数）
-    'supreme_30': 'app.numforlife.com.supreme.1month',    // 至尊会员 1 个月
-    'supreme_90': 'app.numforlife.com.supreme.3months',   // 至尊会员 3 个月
-    'supreme_180': 'app.numforlife.com.supreme.6months',  // 至尊会员 6 个月
-    'supreme_365': 'app.numforlife.com.supreme.1year',    // 至尊会员 12 个月
-    'supreme_-1': 'app.numforlife.com.supreme.lifetime',  // 至尊终身会员
+    'supreme_30': 'app.numforlife.com.supreme.1month',
+    'supreme_90': 'app.numforlife.com.supreme.3months',
+    'supreme_180': 'app.numforlife.com.supreme.6months',
+    'supreme_365': 'app.numforlife.com.supreme.1year',
   };
 
-  /// 获取 IAP 产品 ID
+  /// Android 产品 ID 映射（Google Play Store）
+  ///
+  /// ✅ 符合 Google 命名规范：只能用字母、数字和下划线
+  /// ✅ 产品类型：一次性商品（One-time products）
+  static const Map<String, String> _androidProductIdMap = {
+    // 精英会员（vipTime 为天数）
+    'elite_30': 'elite_1month',
+    'elite_90': 'elite_3months',
+    'elite_180': 'elite_6months',
+    'elite_365': 'elite_1year',
+
+    // 至尊会员（vipTime 为天数）
+    'supreme_30': 'supreme_1month',
+    'supreme_90': 'supreme_3months',
+    'supreme_180': 'supreme_6months',
+    'supreme_365': 'supreme_1year',
+  };
+
+  /// 获取 IAP 产品 ID（根据平台自动选择）
   static String? getProductId(String vipName, String vipTime) {
     final key = '${vipName}_$vipTime';
-    return _productIdMap[key];
+    if (Platform.isIOS) {
+      return _iosProductIdMap[key];
+    } else if (Platform.isAndroid) {
+      return _androidProductIdMap[key];
+    }
+    return null;
+  }
+
+  /// 获取所有产品 ID 列表（用于批量查询）
+  static Set<String> getAllProductIds() {
+    if (Platform.isIOS) {
+      return _iosProductIdMap.values.toSet();
+    } else if (Platform.isAndroid) {
+      return _androidProductIdMap.values.toSet();
+    }
+    return {};
   }
 
   @override
@@ -94,6 +139,7 @@ class IAPService implements PaymentService {
       }
 
       final productDetails = response.productDetails.first;
+      print('[IAP] Product details: id=${productDetails.id}, title=${productDetails.title}, price=${productDetails.price}');
 
       // 5. 监听购买状态
       final completer = Completer<bool>();
@@ -186,8 +232,26 @@ class IAPService implements PaymentService {
           }
         }
 
-        // 完成购买（清除 App Store 队列）
-        await _iap.completePurchase(purchase);
+        // ✅ 只有验证成功才完成购买（消费产品）
+        // 验证失败时保留购买记录，用户可以联系客服或重试
+        if (success) {
+          // Android 需要显式消费消耗型产品
+          if (Platform.isAndroid) {
+            final androidAddition = _iap.getPlatformAddition<InAppPurchaseAndroidPlatformAddition>();
+            final consumeResponse = await androidAddition.consumePurchase(purchase);
+
+            if (consumeResponse.responseCode == BillingResponse.ok) {
+              print('[IAP] Android purchase consumed successfully');
+            } else {
+              print('[IAP] Android consume failed: ${consumeResponse.responseCode}');
+            }
+          }
+
+          await _iap.completePurchase(purchase);
+          print('[IAP] Purchase completed and consumed');
+        } else {
+          print('[IAP] Purchase NOT completed due to verification failure');
+        }
       } else if (purchase.status == PurchaseStatus.canceled) {
         // 用户取消
         if (!completer.isCompleted) {
@@ -222,56 +286,69 @@ class IAPService implements PaymentService {
       }
 
       print('[IAP] User: ${user.userid}, token: ${user.token?.substring(0, 10) ?? "null"}...');
+      print('[IAP] Platform: ${Platform.isIOS ? "iOS" : "Android"}');
+      print('[IAP] Purchase type: ${purchase.runtimeType}');
+      print('[IAP] Verification source: ${purchase.verificationData.source}');
 
-      // 获取 iOS 收据数据（兼容 StoreKit 1 和 StoreKit 2）
-      String? receiptData;
+      // 获取收据/购买令牌
+      String verificationData;
+      String apiEndpoint;
+
       if (Platform.isIOS) {
-        print('[IAP] Purchase type: ${purchase.runtimeType}');
-        print('[IAP] Verification source: ${purchase.verificationData.source}');
+        // iOS: 使用 serverVerificationData 或 localVerificationData
+        verificationData = purchase.verificationData.serverVerificationData;
+        print('[IAP] iOS server verification data length: ${verificationData.length}');
 
-        // 优先使用 serverVerificationData（适用于 Apple verifyReceipt API）
-        // localVerificationData 在 StoreKit 2 中是 JWS 格式，不兼容旧的验证 API
-        receiptData = purchase.verificationData.serverVerificationData;
-        print('[IAP] Server verification data length: ${receiptData.length}');
-
-        // 如果 serverVerificationData 为空，尝试 localVerificationData
-        if (receiptData.isEmpty) {
-          receiptData = purchase.verificationData.localVerificationData;
-          print('[IAP] Fallback to local data, length: ${receiptData.length}');
+        if (verificationData.isEmpty) {
+          verificationData = purchase.verificationData.localVerificationData;
+          print('[IAP] Fallback to local data, length: ${verificationData.length}');
         }
+        apiEndpoint = '${HttpService.baseUrl}/order/addIAPOrder';
+      } else if (Platform.isAndroid) {
+        // Android: 使用 purchaseToken (serverVerificationData)
+        verificationData = purchase.verificationData.serverVerificationData;
+        print('[IAP] Android purchase token length: ${verificationData.length}');
+        apiEndpoint = '${HttpService.baseUrl}/order/addGooglePlayOrder';
       } else {
-        _lastVerifyError = '非 iOS 平台';
+        _lastVerifyError = '不支持的平台';
         print('[IAP] Error: $_lastVerifyError');
         return false;
       }
 
-      if (receiptData == null || receiptData.isEmpty) {
-        _lastVerifyError = '收据数据为空 (receiptData is null or empty)';
+      if (verificationData.isEmpty) {
+        _lastVerifyError = '收据/令牌数据为空';
         print('[IAP] Error: $_lastVerifyError');
         return false;
       }
 
-      print('[IAP] Sending receipt to server...');
-      print('[IAP] URL: ${HttpService.baseUrl}/order/addIAPOrder');
+      print('[IAP] Sending to server...');
+      print('[IAP] URL: $apiEndpoint');
       print('[IAP] product_id: ${purchase.productID}');
       print('[IAP] transaction_id: ${purchase.purchaseID}');
 
+      final requestBody = {
+        'receipt': verificationData, // iOS: receipt, Android: purchaseToken
+        'transaction_id': purchase.purchaseID ?? '',
+        'product_id': purchase.productID,
+        'vip_level_id': vipLevelId,
+        'vip_time': vipTime,
+        'vip_name': vipName,
+        'vip_date': vipDate,
+        'original_amount': originalAmount,
+        'amount': amount,
+        'userid': user.userid.toString(),
+        'token': user.token ?? '',
+      };
+
+      // Android 需要额外传递 packageName
+      if (Platform.isAndroid) {
+        requestBody['package_name'] = 'uni.UNI4377E5D';
+      }
+
       final res = await http.post(
-        Uri.parse('${HttpService.baseUrl}/order/addIAPOrder'),
+        Uri.parse(apiEndpoint),
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: {
-          'receipt': receiptData,
-          'transaction_id': purchase.purchaseID ?? '',
-          'product_id': purchase.productID,
-          'vip_level_id': vipLevelId,
-          'vip_time': vipTime,
-          'vip_name': vipName,
-          'vip_date': vipDate,
-          'original_amount': originalAmount,
-          'amount': amount,
-          'userid': user.userid.toString(),
-          'token': user.token ?? '',
-        },
+        body: requestBody,
       );
 
       print('[IAP] Server response: ${res.statusCode}');

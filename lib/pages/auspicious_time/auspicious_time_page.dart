@@ -2,18 +2,15 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:lunar/lunar.dart';
-import '../../dto/user.dart';
 import '../../handler/api_exception.dart';
 import '../../models/qimen_result.dart';
 import '../../models/default_qimen_data.dart';
 import '../../services/qimen_service.dart';
-import '../../services/user_service.dart';
-import '../../util/dialog_util.dart';
+import '../../services/coin_service.dart';
 import '../../util/http_util.dart';
 import '../../util/message_util.dart';
-import '../../util/app_styles.dart';
+import '../../util/coin_guard.dart';
 import '../home/tutor_consult_page.dart';
-import '../my/member_privilege_page.dart';
 
 class AuspiciousTimePage extends StatefulWidget {
   const AuspiciousTimePage({super.key});
@@ -26,7 +23,6 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
   DateTime _selectedDateTime = DateTime.now();
   QimenResult? _result;
   bool _isLoading = false;
-  QuotaInfo? _quotaInfo;
   LiurenResult? _liurenResult; // 六壬结果
   String _lunarDate = ''; // 农历日期
   bool _isExampleData = false; // 是否是示例数据
@@ -35,9 +31,9 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
   @override
   void initState() {
     super.initState();
-    // 页面加载完成后检查配额、加载农历和最近记录
+    // 页面加载完成后加载农历和最近记录，预加载积分配置
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initQuotaCheck();
+      CoinGuard.preload();
       _loadLunarDate();
       _loadLatestRecord();
     });
@@ -127,7 +123,8 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
 
       setState(() {
         // 格式: "2025 九月 廿三 申时"
-        _lunarDate = '${_selectedDateTime.year} ${lunar.getMonthInChinese()}月 ${lunar.getDayInChinese()} $timeZhi';
+        _lunarDate =
+            '${_selectedDateTime.year} ${lunar.getMonthInChinese()}月 ${lunar.getDayInChinese()} $timeZhi';
       });
     } catch (e) {
       // 农历加载失败不影响主要功能
@@ -142,8 +139,18 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
   /// 根据小时获取时辰
   String _getTimeZhi(int hour) {
     const timeZhiList = [
-      '子时', '丑时', '寅时', '卯时', '辰时', '巳时',
-      '午时', '未时', '申时', '酉时', '戌时', '亥时',
+      '子时',
+      '丑时',
+      '寅时',
+      '卯时',
+      '辰时',
+      '巳时',
+      '午时',
+      '未时',
+      '申时',
+      '酉时',
+      '戌时',
+      '亥时',
     ];
 
     // 23:00-00:59 子时
@@ -158,40 +165,6 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
     }
 
     return timeZhiList[index];
-  }
-
-  /// 初始化配额检查
-  Future<void> _initQuotaCheck() async {
-    try {
-      final User? user = await UserService().getUserInfo();
-      print('AuspiciousTime _initQuotaCheck: user=${user?.id}, token=${user?.token?.substring(0, 10)}...');
-      if (user == null) {
-        print('AuspiciousTime _initQuotaCheck: user is null, retrying in 2 seconds...');
-        // 用户信息未加载，等待2秒后重试
-        await Future.delayed(const Duration(seconds: 2));
-        if (!mounted) return;
-        await _initQuotaCheck(); // 递归重试一次
-        return;
-      }
-
-      if (!mounted) return;
-      // 所有用户统一调用后端查询配额（后端会根据 vip_level_id 返回对应配额）
-      final QuotaInfo? quotaInfo = await HttpUtil.request<QuotaInfo?>(
-        () => QimenService.checkQuota(),
-        context,
-        () => mounted,
-      );
-
-      print('AuspiciousTime _initQuotaCheck: quotaInfo=${quotaInfo?.remaining}/${quotaInfo?.limit}');
-
-      if (!mounted) return;
-      setState(() {
-        _quotaInfo = quotaInfo;
-      });
-    } catch (e) {
-      print('AuspiciousTime _initQuotaCheck error: $e');
-      // 配额检查失败，允许继续（graceful degradation）
-    }
   }
 
   /// 选择日期
@@ -209,20 +182,21 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
           data: Theme.of(context).copyWith(
             colorScheme: isDark
                 ? ColorScheme.dark(
-                    primary: const Color(0xFFFFD54F),     // 选中的日期/按钮颜色
-                    onPrimary: Colors.black,              // 选中日期的文字颜色
+                    primary: const Color(0xFFFFD54F), // 选中的日期/按钮颜色
+                    onPrimary: Colors.black, // 选中日期的文字颜色
                     surface: theme.cardTheme.color ?? const Color(0xFF2A2A2A),
-                    onSurface: Colors.white,              // 普通文字颜色
+                    onSurface: Colors.white, // 普通文字颜色
                   )
                 : ColorScheme.light(
-                    primary: const Color(0xFFFFC107),     // 选中的日期/按钮颜色（主题黄色）
-                    onPrimary: Colors.black,              // 选中日期的文字颜色
-                    surface: Colors.white,                // 背景色
-                    onSurface: Colors.black,              // 普通文字颜色
+                    primary: const Color(0xFFFFC107), // 选中的日期/按钮颜色（主题黄色）
+                    onPrimary: Colors.black, // 选中日期的文字颜色
+                    surface: Colors.white, // 背景色
+                    onSurface: Colors.black, // 普通文字颜色
                   ),
             textButtonTheme: TextButtonThemeData(
               style: TextButton.styleFrom(
-                foregroundColor: isDark ? const Color(0xFFFFD54F) : const Color(0xFFFFC107),
+                foregroundColor:
+                    isDark ? const Color(0xFFFFD54F) : const Color(0xFFFFC107),
               ),
             ),
           ),
@@ -259,20 +233,21 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
           data: Theme.of(context).copyWith(
             colorScheme: isDark
                 ? ColorScheme.dark(
-                    primary: const Color(0xFFFFD54F),     // 选中的时间/按钮颜色
-                    onPrimary: Colors.black,              // 选中时间的文字颜色
+                    primary: const Color(0xFFFFD54F), // 选中的时间/按钮颜色
+                    onPrimary: Colors.black, // 选中时间的文字颜色
                     surface: theme.cardTheme.color ?? const Color(0xFF2A2A2A),
-                    onSurface: Colors.white,              // 普通文字颜色
+                    onSurface: Colors.white, // 普通文字颜色
                   )
                 : ColorScheme.light(
-                    primary: const Color(0xFFFFC107),     // 选中的时间/按钮颜色（主题黄色）
-                    onPrimary: Colors.black,              // 选中时间的文字颜色
-                    surface: Colors.white,                // 背景色
-                    onSurface: Colors.black,              // 普通文字颜色
+                    primary: const Color(0xFFFFC107), // 选中的时间/按钮颜色（主题黄色）
+                    onPrimary: Colors.black, // 选中时间的文字颜色
+                    surface: Colors.white, // 背景色
+                    onSurface: Colors.black, // 普通文字颜色
                   ),
             textButtonTheme: TextButtonThemeData(
               style: TextButton.styleFrom(
-                foregroundColor: isDark ? const Color(0xFFFFD54F) : const Color(0xFFFFC107),
+                foregroundColor:
+                    isDark ? const Color(0xFFFFD54F) : const Color(0xFFFFC107),
               ),
             ),
           ),
@@ -296,23 +271,13 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
 
   /// 生成吉时
   Future<void> _generateAuspiciousTime() async {
-    // 检查配额
-    if (_quotaInfo != null && _quotaInfo!.remaining <= 0) {
-      final confirmed = await DialogUtil.confirm(
-        context,
-        title: "次数超限",
-        content: "本月免费次数已用完",
-        cancelText: "取消",
-        confirmText: "升级会员",
-      );
-
-      if (!mounted || !confirmed) return;
-      Navigator.push<bool>(
-        context,
-        MaterialPageRoute(builder: (_) => const MemberPrivilegePage()),
-      );
-      return;
-    }
+    // 积分消费检查
+    final canProceed = await CoinGuard.checkAndConsume(
+      context: context,
+      functionId: CoinService.funcLuckyTime,
+      functionName: '吉时出行',
+    );
+    if (!canProceed || !mounted) return;
 
     try {
       setState(() {
@@ -328,6 +293,7 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
             day: _selectedDateTime.day,
             hour: _selectedDateTime.hour,
             minute: _selectedDateTime.minute,
+            coinConsumeId: CoinGuard.lastConsumeId,
           ),
           context,
           () => mounted,
@@ -350,19 +316,6 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
       final QimenResult? result = results[0] as QimenResult?;
       final LiurenResult? liurenResult = results[1] as LiurenResult?;
 
-      // 后端已经在 getAuspiciousTime 中消耗次数，前端只需更新显示
-      // 重新检查配额以获取最新的剩余次数
-      try {
-        final quotaInfo = await QimenService.checkQuota();
-        if (mounted) {
-          setState(() {
-            _quotaInfo = quotaInfo;
-          });
-        }
-      } catch (e) {
-        // 配额查询失败不影响结果显示
-      }
-
       setState(() {
         _result = result;
         _liurenResult = liurenResult;
@@ -377,25 +330,9 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
         _isLoading = false;
       });
 
-      // 处理 API 异常，特别是次数不足的情况
+      // 处理 API 异常
       if (e is ApiException) {
-        if (e.message == '没有权限或次数不足') {
-          final confirmed = await DialogUtil.confirm(
-            context,
-            title: "次数超限",
-            content: "本月免费次数已用完",
-            cancelText: "取消",
-            confirmText: "升级会员",
-          );
-
-          if (!mounted || !confirmed) return;
-          Navigator.push<bool>(
-            context,
-            MaterialPageRoute(builder: (_) => const MemberPrivilegePage()),
-          );
-        } else {
-          MessageUtil.info(context, e.message);
-        }
+        MessageUtil.info(context, e.message);
       } else {
         MessageUtil.info(context, '请求错误');
       }
@@ -418,7 +355,8 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
         leading: IconButton(
           icon: Icon(
             Icons.arrow_back_ios_new,
-            color: theme.appBarTheme.iconTheme?.color ?? (isDark ? Colors.white : Colors.black),
+            color: theme.appBarTheme.iconTheme?.color ??
+                (isDark ? Colors.white : Colors.black),
           ),
           onPressed: () => Navigator.pop(context),
         ),
@@ -479,12 +417,29 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
             child: ColorFiltered(
               colorFilter: isDark
                   ? const ColorFilter.matrix(<double>[
-                      0.3, 0, 0, 0, 0,
-                      0, 0.3, 0, 0, 0,
-                      0, 0, 0.3, 0, 0,
-                      0, 0, 0, 1, 0,
+                      0.3,
+                      0,
+                      0,
+                      0,
+                      0,
+                      0,
+                      0.3,
+                      0,
+                      0,
+                      0,
+                      0,
+                      0,
+                      0.3,
+                      0,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
                     ])
-                  : const ColorFilter.mode(Colors.transparent, BlendMode.multiply),
+                  : const ColorFilter.mode(
+                      Colors.transparent, BlendMode.multiply),
               child: Image.asset(
                 'assets/icons/luckout_card_bg1.png',
                 fit: BoxFit.fill,
@@ -503,7 +458,10 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
             padding: EdgeInsets.all(screenWidth * 0.04),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: isDark ? const Color(0xFF555555) : const Color(0xFF3A3A3A)),
+              border: Border.all(
+                  color: isDark
+                      ? const Color(0xFF555555)
+                      : const Color(0xFF3A3A3A)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -519,25 +477,27 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
                     child: Text(
                       '农历 $_lunarDate',
                       style: TextStyle(
-                        color: isDark ? Colors.white70 : const Color(0xFF666666),
+                        color:
+                            isDark ? Colors.white70 : const Color(0xFF666666),
                         fontSize: screenWidth * 0.035,
-                        shadows: isDark ? null : [
-                          const Shadow(offset: Offset(-1, -1), color: Colors.white),
-                          const Shadow(offset: Offset(1, -1), color: Colors.white),
-                          const Shadow(offset: Offset(1, 1), color: Colors.white),
-                          const Shadow(offset: Offset(-1, 1), color: Colors.white),
-                        ],
+                        shadows: isDark
+                            ? null
+                            : [
+                                const Shadow(
+                                    offset: Offset(-1, -1),
+                                    color: Colors.white),
+                                const Shadow(
+                                    offset: Offset(1, -1), color: Colors.white),
+                                const Shadow(
+                                    offset: Offset(1, 1), color: Colors.white),
+                                const Shadow(
+                                    offset: Offset(-1, 1), color: Colors.white),
+                              ],
                       ),
                     ),
                   ),
 
                 SizedBox(height: screenHeight * 0.02),
-
-                // 配额显示
-                if (_quotaInfo != null) ...[
-                  _buildQuotaDisplay(screenWidth),
-                  SizedBox(height: screenHeight * 0.02),
-                ],
 
                 // 生成吉时按钮
                 _buildGenerateButton(screenWidth, screenHeight),
@@ -571,12 +531,29 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
             child: ColorFiltered(
               colorFilter: isDark
                   ? const ColorFilter.matrix(<double>[
-                      0.3, 0, 0, 0, 0,
-                      0, 0.3, 0, 0, 0,
-                      0, 0, 0.3, 0, 0,
-                      0, 0, 0, 1, 0,
+                      0.3,
+                      0,
+                      0,
+                      0,
+                      0,
+                      0,
+                      0.3,
+                      0,
+                      0,
+                      0,
+                      0,
+                      0,
+                      0.3,
+                      0,
+                      0,
+                      0,
+                      0,
+                      0,
+                      1,
+                      0,
                     ])
-                  : const ColorFilter.mode(Colors.transparent, BlendMode.multiply),
+                  : const ColorFilter.mode(
+                      Colors.transparent, BlendMode.multiply),
               child: Image.asset(
                 'assets/icons/luckout_card_bg2.png',
                 fit: BoxFit.fill,
@@ -595,7 +572,10 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
             padding: EdgeInsets.all(screenWidth * 0.04),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: isDark ? const Color(0xFF555555) : const Color(0xFF3A3A3A)),
+              border: Border.all(
+                  color: isDark
+                      ? const Color(0xFF555555)
+                      : const Color(0xFF3A3A3A)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -617,21 +597,27 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
                         Text(
                           _isExampleData ? '查询示例' : '最近查询',
                           style: TextStyle(
-                            color: isDark ? Colors.white70 : const Color(0xFF666666),
+                            color: isDark
+                                ? Colors.white70
+                                : const Color(0xFF666666),
                             fontSize: screenWidth * 0.03,
                           ),
                         ),
                         Text(
                           ' · ',
                           style: TextStyle(
-                            color: isDark ? Colors.white54 : const Color(0xFF999999),
+                            color: isDark
+                                ? Colors.white54
+                                : const Color(0xFF999999),
                             fontSize: screenWidth * 0.03,
                           ),
                         ),
                         Text(
                           dateTimeStr,
                           style: TextStyle(
-                            color: isDark ? Colors.white70 : const Color(0xFF666666),
+                            color: isDark
+                                ? Colors.white70
+                                : const Color(0xFF666666),
                             fontSize: screenWidth * 0.03,
                           ),
                         ),
@@ -665,9 +651,8 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
     final cardBgColor = isDark
         ? (theme.cardTheme.color ?? const Color(0xFF2A2A2A)).withOpacity(0.9)
         : Colors.white.withOpacity(0.9);
-    final borderColor = isDark
-        ? Colors.white.withOpacity(0.2)
-        : Colors.white.withOpacity(0.5);
+    final borderColor =
+        isDark ? Colors.white.withOpacity(0.2) : Colors.white.withOpacity(0.5);
     final textColor = isDark ? Colors.white : const Color(0xFF1A1A1A);
     final separatorColor = isDark ? Colors.white38 : const Color(0xFFCCCCCC);
 
@@ -785,28 +770,11 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
     );
   }
 
-  /// 配额显示
-  Widget _buildQuotaDisplay(double screenWidth) {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(screenWidth * 0.03),
-      decoration: BoxDecoration(
-        //color: const Color(0xFF2A2A2A),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        AppStyles.formatQuotaDisplay(_quotaInfo!.remaining, _quotaInfo!.limit),
-        textAlign: TextAlign.center,
-        style: AppStyles.getQuotaTextStyle(screenWidth, context),
-      ),
-    );
-  }
-
-  /// 生成吉时按钮（无边框，居中）
+  /// 生成吉时按钮（带积分角标）
   Widget _buildGenerateButton(double screenWidth, double screenHeight) {
     // 定义响应式断点
-    final isSmall = screenWidth < 600;  // 手机
-    final isMedium = screenWidth >= 600 && screenWidth < 1000;  // 平板
+    final isSmall = screenWidth < 600; // 手机
+    final isMedium = screenWidth >= 600 && screenWidth < 1000; // 平板
 
     // 根据断点设置不同的按钮宽度
     double btnWidth;
@@ -830,47 +798,85 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
       fontSize = 16;
     }
 
+    // 获取积分信息
+    final balance = CoinService.getCachedBalance();
+    final config = CoinService.getCachedConfig();
+    final coins = config?.getFunctionCost(CoinService.funcLuckyTime) ?? 1;
+    final isFreeUser = balance?.isFreeUser ?? false;
+
     return Center(
-      child: SizedBox(
-        width: btnWidth,
-        height: btnHeight,
-        child: ElevatedButton(
-          onPressed: _isLoading ? null : _generateAuspiciousTime,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFFFFC107),  // 黄色，与登录按钮一致
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(25),  // 高圆角
-            ),
-            disabledBackgroundColor: Colors.grey,
-            padding: EdgeInsets.symmetric(
-              horizontal: 8,
-              vertical: 0,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          SizedBox(
+            width: btnWidth,
+            height: btnHeight,
+            child: ElevatedButton(
+              onPressed: _isLoading ? null : _generateAuspiciousTime,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFFC107), // 黄色，与登录按钮一致
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(25), // 高圆角
+                ),
+                disabledBackgroundColor: Colors.grey,
+                padding: EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 0,
+                ),
+              ),
+              child: _isLoading
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : Text(
+                      '生成吉时',
+                      style: TextStyle(
+                        fontSize: fontSize.toDouble(),
+                        color: Colors.black, // 黑色文字
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
             ),
           ),
-          child: _isLoading
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                  ),
-                )
-              : Text(
-                  '生成吉时',
-                  style: TextStyle(
-                    fontSize: fontSize.toDouble(),
-                    color: Colors.black,  // 黑色文字
+          // 积分角标（免费用户不显示）
+          if (!isFreeUser && coins > 0)
+            Positioned(
+              top: -8,
+              right: -8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.orange,
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.2),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Text(
+                  '$coins能量点',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
                     fontWeight: FontWeight.bold,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
-        ),
+              ),
+            ),
+        ],
       ),
     );
   }
-
 
   /// 吉时出行区块
   Widget _buildQimenSection(double screenWidth) {
@@ -879,7 +885,8 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
     final titleColor = isDark ? Colors.white : const Color(0xFF000000);
     final contentColor = isDark ? Colors.white70 : const Color(0xFF000000);
     final separatorColor = isDark ? Colors.white38 : const Color(0xFF999999);
-    final luckColor = isDark ? const Color(0xFFFFD54F) : const Color(0xFFCBA656);
+    final luckColor =
+        isDark ? const Color(0xFFFFD54F) : const Color(0xFFCBA656);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -934,7 +941,8 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
     final titleColor = isDark ? Colors.white : const Color(0xFF000000);
     final contentColor = isDark ? Colors.white70 : const Color(0xFF000000);
     final separatorColor = isDark ? Colors.white38 : const Color(0xFF999999);
-    final luckColor = isDark ? const Color(0xFFFFD54F) : const Color(0xFFCBA656);
+    final luckColor =
+        isDark ? const Color(0xFFFFD54F) : const Color(0xFFCBA656);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -985,8 +993,8 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
   /// 将英文标点符号转换为中文标点符号，并去掉换行符
   String _convertToChinese(String text) {
     return text
-        .replaceAll('\n', '')  // 去掉换行符
-        .replaceAll('\r', '')  // 去掉回车符
+        .replaceAll('\n', '') // 去掉换行符
+        .replaceAll('\r', '') // 去掉回车符
         .replaceAll(',', '，')
         .replaceAll('.', '。')
         .replaceAll(':', '：')
@@ -1003,9 +1011,9 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
     return LayoutBuilder(
       builder: (context, constraints) {
         // 定义响应式断点
-        final isSmall = screenWidth < 600;  // 手机
-        final isMedium = screenWidth >= 600 && screenWidth < 1000;  // 平板
-        final isLarge = screenWidth >= 1000;  // 网页
+        final isSmall = screenWidth < 600; // 手机
+        final isMedium = screenWidth >= 600 && screenWidth < 1000; // 平板
+        final isLarge = screenWidth >= 1000; // 网页
 
         // 根据断点设置不同的按钮高度和字体大小
         double btnHeight;
@@ -1032,13 +1040,14 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const TutorConsultPage()),
+                MaterialPageRoute(
+                    builder: (context) => const TutorConsultPage()),
               );
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFFFC107),  // 黄色，与登录按钮一致
+              backgroundColor: const Color(0xFFFFC107), // 黄色，与登录按钮一致
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(25),  // 高圆角
+                borderRadius: BorderRadius.circular(25), // 高圆角
               ),
               elevation: 0,
               padding: EdgeInsets.zero,
@@ -1047,7 +1056,7 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
               '点击详细咨询导师 >',
               style: TextStyle(
                 fontSize: fontSize.toDouble(),
-                color: Colors.black,  // 黑色文字
+                color: Colors.black, // 黑色文字
                 fontWeight: FontWeight.bold,
               ),
               maxLines: 1,
@@ -1064,12 +1073,15 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final borderColor = isDark ? Colors.white54 : const Color(0xFF3A3A3A);
-    final tableBgColor = isDark ? (theme.cardTheme.color ?? const Color(0xFF2A2A2A)) : const Color(0xFFFFFFFF);
+    final tableBgColor = isDark
+        ? (theme.cardTheme.color ?? const Color(0xFF2A2A2A))
+        : const Color(0xFFFFFFFF);
     final borderWidth = 0.5;
     final containerPadding = 0.0;
-    final minColumnWidth = 35.0;  // 最小列宽，确保两个字能横排显示
+    final minColumnWidth = 35.0; // 最小列宽，确保两个字能横排显示
     // 基础单位宽度：表格分为18个单位（边栏1 + 数据列8×2 + 边栏1 = 18）
-    final baseWidth = max((screenWidth * 0.9 - containerPadding * 2) / 18, minColumnWidth / 2);
+    final baseWidth = max(
+        (screenWidth * 0.9 - containerPadding * 2) / 18, minColumnWidth / 2);
 
     // 使用 Stack 实现真正的表格合并效果
     final rowHeight = baseWidth * 2; // 每行高度为2个基础单位，保持正方形
@@ -1082,7 +1094,9 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
       _result!.e4Shensha.where((s) => s.isNotEmpty).toList(),
     ];
     final maxShenshaRows = shenshaLists.isNotEmpty
-        ? shenshaLists.map((list) => list.length).reduce((a, b) => a > b ? a : b)
+        ? shenshaLists
+            .map((list) => list.length)
+            .reduce((a, b) => a > b ? a : b)
         : 0;
     final shenshaRowCount = maxShenshaRows > 0 ? maxShenshaRows : 1;
     final totalRows = 10 + shenshaRowCount; // 前10行固定 + 神煞动态行
@@ -1112,15 +1126,18 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
                 Column(
                   children: [
                     SizedBox(height: baseWidth), // 第一行单倍高度
-                    ...List.generate(totalRows - 1, (index) => SizedBox(height: rowHeight)), // 其他行双倍高度
+                    ...List.generate(totalRows - 1,
+                        (index) => SizedBox(height: rowHeight)), // 其他行双倍高度
                   ],
                 ),
 
                 // 中层：所有单元格用 Positioned 定位
-                ..._buildAllCells(baseWidth, rowHeight, borderColor, borderWidth, isDark),
+                ..._buildAllCells(
+                    baseWidth, rowHeight, borderColor, borderWidth, isDark),
 
                 // 顶层：装饰框层
-                ..._buildDecorativeBoxes(baseWidth, rowHeight, borderColor, borderWidth, shenshaRowCount),
+                ..._buildDecorativeBoxes(baseWidth, rowHeight, borderColor,
+                    borderWidth, shenshaRowCount),
               ],
             ),
           ),
@@ -1171,12 +1188,12 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
     final totalHeight = baseWidth + rowHeight * (9 + shenshaRowCount); // 总高度
     final gap = borderWidth * 3; // 间距倍数,可调整
     boxes.add(buildBox(
-      left: 0.0 - gap,
-      top: 0.0 - gap,
-      width: baseWidth * 18 + gap * 2, // 18列
-      height: totalHeight + gap * 2,
-      borderRadius:  null//BorderRadius.circular(11), // 与内层Container圆角一致
-    ));
+        left: 0.0 - gap,
+        top: 0.0 - gap,
+        width: baseWidth * 18 + gap * 2, // 18列
+        height: totalHeight + gap * 2,
+        borderRadius: null //BorderRadius.circular(11), // 与内层Container圆角一致
+        ));
 
     // 装饰框1: 时日月年+十神+天干+地支 (第0-3行,第1-16列)
     // 向外扩展 gap,在单元格边框外留出空隙,形成双线效果
@@ -1188,8 +1205,10 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
     ));
 
     // 装饰框2: 藏干12格 (第4-6行,第1-16列,每列分4格,每格2单位宽)
-    for (int row = 0; row < 3; row++) { // 3行
-      for (int col = 0; col < 4; col++) { // 4列(时日月年)
+    for (int row = 0; row < 3; row++) {
+      // 3行
+      for (int col = 0; col < 4; col++) {
+        // 4列(时日月年)
         boxes.add(buildBox(
           left: baseWidth * (1 + col * 4) - gap,
           top: baseWidth + rowHeight * (3 + row) - gap,
@@ -1219,7 +1238,8 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
   }
 
   /// 构建所有单元格（使用绝对定位）
-  List<Widget> _buildAllCells(double baseWidth, double rowHeight, Color borderColor, double borderWidth, bool isDark) {
+  List<Widget> _buildAllCells(double baseWidth, double rowHeight,
+      Color borderColor, double borderWidth, bool isDark) {
     List<Widget> allCells = [];
     // 统一使用 .sp 单位
     final fontSize = 11.sp;
@@ -1243,16 +1263,16 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
       String text, {
       bool isHeader = false,
       bool isVertical = false,
-      bool hasTopLine = false,         // 上方装饰线
-      bool hasBottomLine = false,      // 下方装饰线
-      bool hasLeftLine = false,        // 左侧装饰线
-      bool hasRightLine = false,       // 右侧装饰线
-      double topLinePosition = 1.0,    // 顶部装饰线距离上边缘的距离
+      bool hasTopLine = false, // 上方装饰线
+      bool hasBottomLine = false, // 下方装饰线
+      bool hasLeftLine = false, // 左侧装饰线
+      bool hasRightLine = false, // 右侧装饰线
+      double topLinePosition = 1.0, // 顶部装饰线距离上边缘的距离
       double bottomLinePosition = 1.0, // 底部装饰线距离下边缘的距离
-      double leftLinePosition = 1.0,   // 左侧装饰线距离左边缘的距离
-      double rightLinePosition = 1.0,  // 右侧装饰线距离右边缘的距离
-      double lineMargin = 0.0,         // 装饰线两端缩进距离
-      double lineThickness = 1.0,      // 装饰线粗细
+      double leftLinePosition = 1.0, // 左侧装饰线距离左边缘的距离
+      double rightLinePosition = 1.0, // 右侧装饰线距离右边缘的距离
+      double lineMargin = 0.0, // 装饰线两端缩进距离
+      double lineThickness = 1.0, // 装饰线粗细
     }) {
       // 第一行、第一列、最后一列保留粗体
       final isBold = row == 0 || col == 0 || col == 17;
@@ -1325,16 +1345,27 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
                           bottom: 4,
                         )
                       : (row == 0 && rowSpan == 1
-                          ? const EdgeInsets.symmetric(horizontal: 4, vertical: 0) // 第0行单行单元格：上下padding为0
+                          ? const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 0) // 第0行单行单元格：上下padding为0
                           : (col == 0
-                              ? const EdgeInsets.only(left: 3, right: 5, top: 4, bottom: 4) // 第一列：左侧加padding
+                              ? const EdgeInsets.only(
+                                  left: 3,
+                                  right: 5,
+                                  top: 4,
+                                  bottom: 4) // 第一列：左侧加padding
                               : (col == 17
-                                  ? const EdgeInsets.only(left: 3, right: 5, top: 2, bottom: 6) // 最后一列：右侧加padding
+                                  ? const EdgeInsets.only(
+                                      left: 3,
+                                      right: 5,
+                                      top: 2,
+                                      bottom: 6) // 最后一列：右侧加padding
                                   : const EdgeInsets.all(4)))),
                   child: Text(
                     displayText,
                     textAlign: TextAlign.center,
-                    maxLines: isVertical ? rowSpan * 10 : (rowSpan * 5), // 增加行数限制
+                    maxLines:
+                        isVertical ? rowSpan * 10 : (rowSpan * 5), // 增加行数限制
                     overflow: TextOverflow.visible, // 允许完整显示
                     style: TextStyle(
                       color: textColor,
@@ -1401,7 +1432,8 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
 
     // 第1行：标题（新列坐标：0, 1-4, 5-8, 9-12, 13-16, 17）
     // 第一列从第0行开始显示"胎元"，跨4行（合并第1行的空白格和第2-4行的胎元）
-    allCells.add(buildCell(0, 0, 4, 1, '胎元：${_result!.a1Taiyuan}', isVertical: true));
+    allCells.add(
+        buildCell(0, 0, 4, 1, '胎元：${_result!.a1Taiyuan}', isVertical: true));
     allCells.add(buildCell(0, 1, 1, 4, '时', isHeader: true));
     allCells.add(buildCell(0, 5, 1, 4, '日', isHeader: true));
     allCells.add(buildCell(0, 9, 1, 4, '月', isHeader: true));
@@ -1464,7 +1496,8 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
     allCells.add(buildCell(6, 17, 1, 1, '藏干', isVertical: true));
 
     // 第8-10行：胎息（rowSpan=3） + 运/纳音/空亡
-    allCells.add(buildCell(7, 0, 3, 1, '胎息：${_result!.a3Taixi}', isVertical: true));
+    allCells
+        .add(buildCell(7, 0, 3, 1, '胎息：${_result!.a3Taixi}', isVertical: true));
     allCells.add(buildCell(7, 1, 1, 4, _result!.b31Yun));
     allCells.add(buildCell(7, 5, 1, 4, _result!.c31Yun));
     allCells.add(buildCell(7, 9, 1, 4, _result!.d31Yun));
@@ -1491,11 +1524,14 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
       _result!.d4Shensha.where((s) => s.isNotEmpty).toList(),
       _result!.e4Shensha.where((s) => s.isNotEmpty).toList(),
     ];
-    final maxShenshaRows = shenshaLists.map((list) => list.length).reduce((a, b) => a > b ? a : b);
+    final maxShenshaRows =
+        shenshaLists.map((list) => list.length).reduce((a, b) => a > b ? a : b);
     final shenshaRowCount = maxShenshaRows > 0 ? maxShenshaRows : 1; // 至少1行
 
     // 命宫单元格（左侧边栏）
-    allCells.add(buildCell(10, 0, shenshaRowCount, 1, '命宫：${_result!.a4Minggong}', isVertical: true));
+    allCells.add(buildCell(
+        10, 0, shenshaRowCount, 1, '命宫：${_result!.a4Minggong}',
+        isVertical: true));
 
     // 神煞标签（右侧边栏）
     allCells.add(buildCell(10, 17, shenshaRowCount, 1, '神煞', isVertical: true));
@@ -1515,5 +1551,4 @@ class _AuspiciousTimePageState extends State<AuspiciousTimePage> {
 
     return allCells;
   }
-
 }

@@ -1,8 +1,10 @@
+import 'dart:io';
 import 'package:auto_size_text/auto_size_text.dart';
 import 'package:const_calc/dto/order.dart';
 import 'package:const_calc/dto/vip_purview.dart';
 import 'package:const_calc/services/my_service.dart';
 import 'package:const_calc/services/user_service.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../../dto/user.dart';
@@ -44,9 +46,215 @@ class _MemberPrivilegePageState extends State<MemberPrivilegePage> {
   Future<void> _bootstrap() async {
     UserService.clearCache(); // 清缓存，获取最新的，要不后台改了vip看不到
     await _initUserInfo();
-    _findVipPurviewList();
-    _initVip2FeeInfo();
-    _initVip3FeeInfo();
+    await _findVipPurviewList();
+    await _initVip2FeeInfo();
+    await _initVip3FeeInfo();
+  }
+
+  /// 处理支付
+  /// 如果平台支持多种支付方式，显示选择弹窗
+  /// 返回 true 表示支付成功，false 表示失败或取消
+  Future<bool> _handlePayment({
+    required String vipLevelId,
+    required String vipName,
+    required String vipTime,
+    required String vipDate,
+    required String amount,
+    required String originalAmount,
+  }) async {
+    // 检查是否有多种支付方式可选
+    if (PaymentFactory.hasMultipleMethods()) {
+      // 显示支付方式选择弹窗
+      final selectedMethod = await _showPaymentMethodDialog();
+      if (selectedMethod == null) {
+        // 用户取消选择
+        return false;
+      }
+
+      // 使用用户选择的支付方式
+      final paymentService = PaymentFactory.createByMethod(selectedMethod);
+      return await paymentService.pay(
+        context: context,
+        vipLevelId: vipLevelId,
+        vipName: vipName,
+        vipTime: vipTime,
+        vipDate: vipDate,
+        amount: amount,
+        originalAmount: originalAmount,
+        currency: 'usd',
+      );
+    } else {
+      // 只有一种支付方式，直接使用
+      final paymentService = PaymentFactory.create();
+      return await paymentService.pay(
+        context: context,
+        vipLevelId: vipLevelId,
+        vipName: vipName,
+        vipTime: vipTime,
+        vipDate: vipDate,
+        amount: amount,
+        originalAmount: originalAmount,
+        currency: 'usd',
+      );
+    }
+  }
+
+  /// 显示支付方式选择弹窗
+  Future<PaymentMethod?> _showPaymentMethodDialog() async {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final methods = PaymentFactory.getAvailableMethods();
+
+    return showModalBottomSheet<PaymentMethod>(
+      context: context,
+      backgroundColor: isDark ? const Color(0xFF2C2C2C) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 标题
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '选择支付方式',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : Colors.black,
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: Icon(
+                        Icons.close,
+                        color: isDark ? Colors.white60 : Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // 支付方式列表
+                ...methods.map((method) => _buildPaymentMethodOption(method)),
+
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// 构建支付方式选项
+  Widget _buildPaymentMethodOption(PaymentMethod method) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    // 获取图标
+    IconData iconData;
+    Color iconColor;
+    switch (method) {
+      case PaymentMethod.appleIAP:
+        iconData = Icons.apple;
+        iconColor = isDark ? Colors.white : Colors.black;
+        break;
+      case PaymentMethod.googlePlayIAP:
+        iconData = Icons.shop;
+        iconColor = const Color(0xFF4CAF50); // Google 绿色
+        break;
+      case PaymentMethod.stripe:
+        iconData = Icons.credit_card;
+        iconColor = const Color(0xFF635BFF); // Stripe 紫色
+        break;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => Navigator.pop(context, method),
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF3A3A3A) : const Color(0xFFF5F5F5),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isDark ? Colors.white24 : const Color(0xFFE0E0E0),
+              ),
+            ),
+            child: Row(
+              children: [
+                // 图标
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: iconColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(iconData, color: iconColor, size: 28),
+                ),
+                const SizedBox(width: 16),
+
+                // 名称和描述
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        PaymentFactory.getMethodName(method),
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? Colors.white : Colors.black,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _getPaymentMethodDescription(method),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? Colors.white60 : Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // 箭头
+                Icon(
+                  Icons.chevron_right,
+                  color: isDark ? Colors.white38 : Colors.grey,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 获取支付方式描述
+  String _getPaymentMethodDescription(PaymentMethod method) {
+    switch (method) {
+      case PaymentMethod.appleIAP:
+        return '使用 Apple ID 账户支付';
+      case PaymentMethod.googlePlayIAP:
+        return '使用 Google Play 账户支付';
+      case PaymentMethod.stripe:
+        return '使用信用卡/借记卡支付';
+    }
   }
 
   int _indexFromVip(int vipLevelId) {
@@ -204,6 +412,8 @@ class _MemberPrivilegePageState extends State<MemberPrivilegePage> {
   }
 
   /// 过滤套餐
+  /// - 同级别会员：显示所有套餐（支持续费/时长累加）
+  /// - 升级到更高级别：只显示需要补差价的套餐
   List<VipFee> _filterVipFeesWithFallback({
     required List<VipFee> fees,
     required double remainingNum,
@@ -211,10 +421,16 @@ class _MemberPrivilegePageState extends State<MemberPrivilegePage> {
   }) {
     if (fees.isEmpty) return [];
 
+    final currentVipLevel = userInfo?.vipLevelId ?? 1;
+
     bool keep(VipFee f) {
-      if (userInfo?.vipTime == -1 && userInfo?.vipLevelId == f.vipLevelId)
-        return false;
-      final priceHigher = (f.price - remainingNum) > 0; // 只保留需要补差价的
+      // 同级别会员：显示所有套餐（支持续费/时长累加）
+      if (currentVipLevel == f.vipLevelId) {
+        return true;
+      }
+
+      // 升级到更高级别：只显示需要补差价的套餐
+      final priceHigher = (f.price - remainingNum) > 0;
       return priceHigher;
     }
 
@@ -222,6 +438,18 @@ class _MemberPrivilegePageState extends State<MemberPrivilegePage> {
     if (filtered.isNotEmpty) return filtered;
 
     return [];
+  }
+
+  String _feeSubText(VipFee fee) {
+    final parts = <String>[];
+    final describe = fee.describe.trim();
+    if (describe.isNotEmpty) {
+      parts.add(describe);
+    }
+    if (fee.giftCoins > 0) {
+      parts.add('赠送${fee.giftCoins}能量点');
+    }
+    return parts.join(' · ');
   }
 
   /// 初始化精英会员费用（过滤 + 兜底 + 价格格式化）
@@ -250,7 +478,7 @@ class _MemberPrivilegePageState extends State<MemberPrivilegePage> {
           price: f.price.toStringAsFixed(2),
           amount: f.price,
           // 用于折扣计算
-          subText: f.describe,
+          subText: _feeSubText(f),
           showTag: tmp.isEmpty,
           // 第一项默认推荐
           vipTime: f.vipTime,
@@ -291,7 +519,7 @@ class _MemberPrivilegePageState extends State<MemberPrivilegePage> {
           price: f.price.toStringAsFixed(2),
           amount: f.price,
           // 用于折扣计算
-          subText: f.describe,
+          subText: _feeSubText(f),
           showTag: tmp.isEmpty,
           vipTime: f.vipTime,
         ),
@@ -631,16 +859,30 @@ class _MemberPrivilegePageState extends State<MemberPrivilegePage> {
 
         const SizedBox(height: 20),
 
-        // 按钮联动：应付 = 选中套餐原价 - 折扣
+        // 按钮联动：应付金额计算
+        // - 续费（同级别）：全额支付
+        // - 升级（更高级别）：抵扣差价
         Builder(
           builder: (_) {
             final selected = cards[selectedIndex];
-            final discount = _currentDiscountAmount();
+            final currentVipLevel = userInfo?.vipLevelId ?? 1;
+            final targetVipLevel = _currentIndex + 1; // 0=基础(1), 1=精英(2), 2=至尊(3)
+
+            // 只有升级时才抵扣，续费不抵扣
+            final isUpgrade = targetVipLevel > currentVipLevel;
+            final discount = isUpgrade ? _currentDiscountAmount() : 0.0;
             final payable = (selected.amount - discount);
             final finalPay = (payable > 0 ? payable : 0.0).toStringAsFixed(2);
 
-            // 基础=购买；精英=升级（在精英页不显示升级区，至尊页才显示）
-            final action = ((userInfo?.vipLevelId ?? 1) <= 1) ? '购买' : '升级';
+            // 基础=购买；同级别=续费；更高级别=升级
+            String action;
+            if (currentVipLevel <= 1) {
+              action = '购买';
+            } else if (isUpgrade) {
+              action = '升级';
+            } else {
+              action = '续费';
+            }
             return _buildPayButton(
               label: '$action${selected.title}', // 购买1年 / 升级5年
               priceText: '$finalPay\$', // 折后应付
@@ -655,18 +897,23 @@ class _MemberPrivilegePageState extends State<MemberPrivilegePage> {
                   vipLevelId = '3';
                 }
 
-                // 使用工厂模式，iOS 调用 IAP，Android/Web 调用 Stripe
-                final paymentService = PaymentFactory.create();
-                await paymentService.pay(
-                  context: context,
+                // 执行支付
+                final success = await _handlePayment(
                   vipLevelId: vipLevelId,
                   vipName: vipName == '精英' ? 'elite' : 'supreme',
                   vipTime: selected.vipTime.toString(),
                   vipDate: selected.title,
                   amount: finalPay.toString(),
                   originalAmount: selected.amount.toString(),
-                  currency: 'usd',
                 );
+
+                // 支付成功后刷新页面，更新用户信息和产品列表
+                print('[MemberPage] Payment result: success=$success, mounted=$mounted');
+                if (success && mounted) {
+                  print('[MemberPage] Refreshing page after successful payment...');
+                  await _bootstrap();
+                  print('[MemberPage] Page refreshed');
+                }
               },
             );
           },

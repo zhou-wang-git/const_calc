@@ -4,6 +4,7 @@ class VipFee {
   final int vipTime; // 时长（天）
   final String describe; // 描述
   final int vipLevelId; // 会员等级 ID
+  final int giftCoins; // 购买该套餐赠送的能量点
 
   VipFee({
     required this.name,
@@ -11,6 +12,7 @@ class VipFee {
     required this.vipTime,
     required this.describe,
     required this.vipLevelId,
+    required this.giftCoins,
   });
 
   /// 从 JSON 转换
@@ -21,6 +23,7 @@ class VipFee {
       vipTime: json['vip_time'] ?? 0,
       describe: json['describe'] ?? '',
       vipLevelId: json['vip_level_id'] ?? 0,
+      giftCoins: int.tryParse('${json['gift_coins'] ?? 0}') ?? 0,
     );
   }
 
@@ -32,6 +35,7 @@ class VipFee {
       'vip_time': vipTime,
       'describe': describe,
       'vip_level_id': vipLevelId,
+      'gift_coins': giftCoins,
     };
   }
 }

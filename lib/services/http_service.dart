@@ -13,6 +13,23 @@ class HttpService {
   static const String _tokenKey = 'app_token';
   static String? _token;
 
+  static String? _extractSessionToken(String path, dynamic data) {
+    if (data is! Map || data['token'] == null) {
+      return null;
+    }
+
+    final normalizedPath = path.toLowerCase();
+    final isSessionEndpoint = normalizedPath.endsWith('/login') ||
+        normalizedPath.endsWith('/loginbykcc') ||
+        normalizedPath.endsWith('/refreshtoken');
+    if (!isSessionEndpoint) {
+      return null;
+    }
+
+    final token = data['token'].toString();
+    return token.isEmpty ? null : token;
+  }
+
   static Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     _token = prefs.getString(_tokenKey);
@@ -62,9 +79,9 @@ class HttpService {
       final baseRes = BaseResponse<T>.fromJson(json, fromData);
 
       // 若后端返回了新的 token，同步更新（与现有 post/postForm 保持一致）
-      final data = json['data'];
-      if (data is Map && data['token'] != null) {
-        _token = data['token'].toString();
+      final token = _extractSessionToken(path, json['data']);
+      if (token != null) {
+        _token = token;
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(_tokenKey, _token!);
       }
@@ -110,10 +127,8 @@ class HttpService {
 
       final baseRes = BaseResponse<T>.fromJson(json, fromData);
 
-      dynamic data = json['data'];
-      String? token;
-      if (data is Map && data['token'] != null) {
-        token = data['token'].toString();
+      final token = _extractSessionToken(path, json['data']);
+      if (token != null) {
         _token = token;
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(_tokenKey, _token!);
@@ -166,10 +181,8 @@ class HttpService {
     final baseRes = BaseResponse<T>.fromJson(json, fromData);
 
     // 处理 token
-    dynamic data = json['data'];
-    String? token;
-    if (data is Map && data['token'] != null) {
-      token = data['token'].toString();
+    final token = _extractSessionToken(path, json['data']);
+    if (token != null) {
       _token = token;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_tokenKey, _token!);

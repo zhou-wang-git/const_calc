@@ -4,13 +4,13 @@ import 'package:const_calc/pages/my/select_avatar_page.dart';
 import 'package:const_calc/util/auth_manager.dart';
 import 'package:const_calc/util/message_util.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../component/abs_carousel.dart';
-import '../../dto/abs.dart';
+import '../../dto/coin_balance.dart';
 import '../../dto/user.dart';
-import '../../services/abs_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/coin_service.dart';
 import '../../services/http_service.dart';
 import '../../services/user_service.dart';
 import '../../util/dialog_util.dart';
@@ -21,6 +21,9 @@ import 'feedback_page.dart';
 import 'member_privilege_page.dart';
 import 'order_list_page.dart';
 import 'theme_settings_page.dart';
+import 'wallet_page.dart';
+import 'become_tutor_page.dart';
+import '../shop/shop_order_list_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -33,7 +36,8 @@ class _ProfilePage extends State<ProfilePage> {
   String _avatar = 'assets/icons/avatar.png'; // 默认头像
   String _greeting = ''; // 默认欢迎语
   int _vipLevelId = 1;
-  List<Abs> _absList = []; // 广告
+  User? _userInfo;
+  CoinBalance? _coinBalance;
 
   @override
   void initState() {
@@ -50,32 +54,16 @@ class _ProfilePage extends State<ProfilePage> {
     if (cachedUser != null) {
       _updateUIFromUser(cachedUser);
     }
+    final cachedBalance = CoinService.getCachedBalance();
+    if (cachedBalance != null && mounted) {
+      setState(() => _coinBalance = cachedBalance);
+    }
 
     // 2. 后台静默刷新最新数据
-    await _refreshUserInfo();
-
-    // 3. 加载广告（用户信息刷新后）
-    _loadAbsList();
-  }
-
-  Future<void> _loadAbsList() async {
-    try {
-      final data = await HttpUtil.request<List<Abs>>(
-            () => AbsService.getAbsList(position: '2'),
-        context,
-            () => mounted,
-      );
-      if (!mounted) return;
-      print('ProfilePage _loadAbsList: loaded ${data?.length ?? 0} ads');
-      // 打印广告详情
-      for (var i = 0; i < (data?.length ?? 0); i++) {
-        final abs = data![i];
-        print('ProfilePage ad[$i]: id=${abs.id}, imageUrl=${abs.imageUrl}, title=${abs.title}');
-      }
-      setState(() => _absList = data ?? []);
-    } catch (e) {
-      print('ProfilePage _loadAbsList error: $e');
-    }
+    await Future.wait<dynamic>([
+      _refreshUserInfo(),
+      _refreshCoinBalance(),
+    ]);
   }
 
   /// 退出登录
@@ -103,12 +91,24 @@ class _ProfilePage extends State<ProfilePage> {
   void _updateUIFromUser(User user) {
     if (!mounted) return;
     setState(() {
+      _userInfo = user;
       _vipLevelId = user.vipLevelId;
       _avatar = user.avatar.isNotEmpty
           ? HttpService.domain + user.avatar
           : 'assets/icons/avatar.png';
       _greeting = user.realName;
     });
+  }
+
+  Future<CoinBalance?> _refreshCoinBalance() async {
+    try {
+      final balance = await CoinService.getBalance();
+      if (!mounted) return balance;
+      setState(() => _coinBalance = balance);
+      return balance;
+    } catch (e) {
+      return null;
+    }
   }
 
   /// 静默刷新用户信息（不显示 loading）
@@ -183,7 +183,7 @@ class _ProfilePage extends State<ProfilePage> {
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: theme.shadowColor.withOpacity(0.13),
+                    color: theme.shadowColor.withValues(alpha: 0.13),
                     blurRadius: 2,
                     offset: const Offset(0, 1),
                   ),
@@ -198,6 +198,143 @@ class _ProfilePage extends State<ProfilePage> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildAccountSummaryCard(ThemeData theme, bool isDark) {
+    final cardColor = theme.cardTheme.color ?? theme.cardColor;
+    final accentColor =
+        isDark ? const Color(0xFFE6B957) : theme.colorScheme.primary;
+    final valueColor = theme.textTheme.bodyLarge?.color ??
+        (isDark ? Colors.white : const Color(0xFF111827));
+    final secondaryColor = theme.textTheme.bodyMedium?.color ??
+        (isDark ? Colors.white70 : const Color(0xFF6B7280));
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: theme.shadowColor.withValues(alpha: 0.06),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Row(
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: accentColor.withValues(alpha: 0.12),
+                  ),
+                  child: Icon(
+                    Icons.bolt_rounded,
+                    color: accentColor,
+                    size: 17,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: AutoSizeText(
+                    _coinSummaryValue,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    minFontSize: 12,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: valueColor,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            width: 1,
+            height: 28,
+            margin: const EdgeInsets.symmetric(horizontal: 12),
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.10)
+                : Colors.black.withValues(alpha: 0.06),
+          ),
+          Expanded(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.schedule_rounded,
+                  size: 18,
+                  color: secondaryColor,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: AutoSizeText(
+                    _memberExpiryText,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    minFontSize: 10,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: valueColor,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMemberCard() {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push<bool>(
+          context,
+          MaterialPageRoute(builder: (_) => const MemberPrivilegePage()),
+        ).then((value) {
+          if (mounted && value == true) {
+            _initUserInfo();
+            _refreshCoinBalance();
+          }
+        });
+      },
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.10),
+              blurRadius: 14,
+              offset: const Offset(0, 8),
+            ),
+          ],
+          image: DecorationImage(
+            filterQuality: FilterQuality.high,
+            image: AssetImage('assets/icons/v$_vipLevelId.png'),
+            fit: BoxFit.cover,
+          ),
+        ),
+        child: AspectRatio(
+          aspectRatio: 2124 / 737,
+          child: const SizedBox.expand(),
+        ),
+      ),
     );
   }
 
@@ -228,75 +365,58 @@ class _ProfilePage extends State<ProfilePage> {
             ),
             const SizedBox(height: 8),
 
-            // 广告
-            if (_absList.isNotEmpty) ...[
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: SizedBox(
-                  width: double.infinity, // 撑满父容器可用宽度（减去左右16间距）
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: AbsCarousel(
-                      items: _absList,
-                      aspectRatio: 4.2, // 或者外层给固定 height
-                      autoPlay: true,
-                      clipInside: true,
-                      domainPrefix: HttpService.domain, // 补全 /uploads/xx.jpg
-                      onTap: (abs) async {
-                        // 跳转/埋点
-                        if (abs.url == null || abs.url!.isEmpty) return;
-
-                        final Uri uri = Uri.parse(abs.url ?? '');
-                        if (await canLaunchUrl(uri)) {
-                          // 在外部浏览器打开
-                          await launchUrl(
-                            uri,
-                            mode: LaunchMode.externalApplication,
-                          );
-                        } else {
-                          // ignore: use_build_context_synchronously
-                          MessageUtil.info(context, '无法打开链接: ${abs.url}');
-                        }
-                      },
-                    ),
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 8),
-            ],
+            _buildAccountSummaryCard(theme, isDark),
+            const SizedBox(height: 12),
 
             // 基础会员卡片
-            GestureDetector(
-              onTap: () {
-                Navigator.push<bool>(
-                  context,
-                  MaterialPageRoute(builder: (_) => const MemberPrivilegePage()),
-                ).then((value) {
-                  if (mounted && value == true) {
-                    _initUserInfo();
-                  }
-                });
-              },
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: BoxDecoration(
-                  image: DecorationImage(
-                    filterQuality: FilterQuality.high,
-                    image: AssetImage('assets/icons/v$_vipLevelId.png'),
-                    fit: BoxFit.cover,
+            _buildMemberCard(),
+            if (_showLegacyMemberCard)
+              GestureDetector(
+                onTap: () {
+                  Navigator.push<bool>(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const MemberPrivilegePage()),
+                  ).then((value) {
+                    if (mounted && value == true) {
+                      _initUserInfo();
+                    }
+                  });
+                },
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(
+                    image: DecorationImage(
+                      filterQuality: FilterQuality.high,
+                      image: AssetImage('assets/icons/v$_vipLevelId.png'),
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  child: AspectRatio(
+                    aspectRatio: 2124 / 737, // 用图片的原始宽高比
+                    child: Container(),
                   ),
                 ),
-                child: AspectRatio(
-                  aspectRatio: 2124 / 737, // 用图片的原始宽高比
-                  child: Container(),
-                ),
               ),
-            ),
 
             const SizedBox(height: 8),
 
             // 列表项模块
+            _buildListItem(
+              "我的钱包",
+              'assets/icons/pay.png',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const WalletPage()),
+                ).then((_) {
+                  if (mounted) {
+                    _initUserInfo();
+                    _refreshCoinBalance();
+                  }
+                });
+              },
+            ),
             _buildListItem(
               "关于我们",
               'assets/icons/about.png',
@@ -348,12 +468,32 @@ class _ProfilePage extends State<ProfilePage> {
               },
             ),
             _buildListItem(
+              "商城订单",
+              'assets/icons/pay.png',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ShopOrderListPage()),
+                );
+              },
+            ),
+            _buildListItem(
               "主题设置",
               'assets/icons/setting.png',
               onTap: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const ThemeSettingsPage()),
+                );
+              },
+            ),
+            _buildListItem(
+              "成为导师",
+              'assets/icons/tutor_apply.svg',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const BecomeTutorPage()),
                 );
               },
             ),
@@ -400,7 +540,7 @@ class _ProfilePage extends State<ProfilePage> {
                 onTap: () async {
                   final Uri emailUri = Uri(
                     scheme: 'mailto',
-                    path: 'shuyi.fn@gmail.com',
+                    path: 'support@kccdigital.com',
                   );
                   if (await canLaunchUrl(emailUri)) {
                     await launchUrl(emailUri);
@@ -412,7 +552,7 @@ class _ProfilePage extends State<ProfilePage> {
                     style: theme.textTheme.bodySmall?.copyWith(fontSize: 12),
                     children: [
                       TextSpan(
-                        text: "shuyi.fn@gmail.com",
+                        text: "support@kccdigital.com",
                         style: (theme.textTheme.bodySmall ??
                                 const TextStyle(fontSize: 12))
                             .copyWith(
@@ -454,11 +594,7 @@ class _ProfilePage extends State<ProfilePage> {
             ),
             child: Row(
               children: [
-                Image.asset(
-                  iconPath,
-                  width: 40,
-                  height: 40,
-                ),
+                _buildListIcon(iconPath, isDark),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
@@ -482,11 +618,92 @@ class _ProfilePage extends State<ProfilePage> {
             child: Divider(
               height: 0,
               thickness: 0.6,
-              color: isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.05),
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.1)
+                  : Colors.black.withValues(alpha: 0.05),
             ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildListIcon(String iconPath, bool isDark) {
+    if (iconPath.toLowerCase().endsWith('.svg')) {
+      return Container(
+        width: 40,
+        height: 40,
+        padding: const EdgeInsets.all(9),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: const Color(0xFFF7F7F7),
+        ),
+        child: SvgPicture.asset(
+          iconPath,
+          colorFilter:
+              const ColorFilter.mode(Color(0xFF6F6F6F), BlendMode.srcIn),
+        ),
+      );
+    }
+
+    return Image.asset(
+      iconPath,
+      width: 40,
+      height: 40,
+    );
+  }
+
+  bool get _showLegacyMemberCard => false;
+
+  String get _coinSummaryValue {
+    if (_coinBalance == null) return '--';
+    if (_coinBalance!.isFreeUser) return '∞';
+    return '${_coinBalance!.coins}';
+  }
+
+  String get _memberExpiryText {
+    final user = _userInfo;
+    if (user == null) return '--';
+
+    final vipEnd = _normalizeDateText(user.vipSubscriptionEnd);
+    if (vipEnd.isNotEmpty) return vipEnd;
+
+    if (user.overduedate > 0) {
+      return _formatUnixDate(user.overduedate);
+    }
+
+    final vipDate = _normalizeDateText(user.vipDate);
+    if (vipDate.isNotEmpty) return vipDate;
+
+    if (user.order?.vipDate.isNotEmpty == true) {
+      return user.order!.vipDate;
+    }
+
+    return user.vipLevelId == 1 ? '长期有效' : '待更新';
+  }
+
+  String _normalizeDateText(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return '';
+
+    if (trimmed.contains('T')) {
+      return trimmed.split('T').first;
+    }
+    if (trimmed.contains(' ')) {
+      return trimmed.split(' ').first;
+    }
+    return trimmed;
+  }
+
+  String _formatUnixDate(int seconds) {
+    try {
+      final date =
+          DateTime.fromMillisecondsSinceEpoch(seconds * 1000, isUtc: false);
+      final month = date.month.toString().padLeft(2, '0');
+      final day = date.day.toString().padLeft(2, '0');
+      return '${date.year}-$month-$day';
+    } catch (_) {
+      return '--';
+    }
   }
 }

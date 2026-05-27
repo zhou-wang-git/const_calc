@@ -10,7 +10,10 @@ import 'five_elements_card_widget.dart';
 import 'number_card_widget.dart';
 
 class LibraryPage extends StatefulWidget {
-  const LibraryPage({super.key});
+  /// 是否显示返回按钮，底部导航栏进入时为 false
+  final bool showBackButton;
+
+  const LibraryPage({super.key, this.showBackButton = true});
 
   @override
   State<LibraryPage> createState() => _LibraryPageState();
@@ -125,6 +128,13 @@ class _LibraryPageState extends State<LibraryPage> {
         backgroundColor: theme.appBarTheme.backgroundColor,
         centerTitle: true,
         elevation: 0.5,
+        automaticallyImplyLeading: widget.showBackButton,
+        leading: widget.showBackButton
+            ? IconButton(
+                icon: Icon(Icons.arrow_back_ios_new, color: theme.appBarTheme.titleTextStyle?.color),
+                onPressed: () => Navigator.pop(context),
+              )
+            : null,
       ),
       body: Column(
         children: [

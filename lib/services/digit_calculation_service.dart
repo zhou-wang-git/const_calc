@@ -6,6 +6,7 @@ import '../dto/digit_calculation_sum.dart';
 import '../dto/name_profile_config.dart';
 import '../dto/user.dart';
 import '../models/qimen_result.dart';
+import '../util/date_util.dart';
 import 'http_service.dart';
 
 class DigitCalculationService {
@@ -27,6 +28,7 @@ class DigitCalculationService {
     String? parentYear,
     String? parentMonth,
     String? parentDay,
+    int? coinConsumeId,
   }) async {
     final User? user = await UserService().getUserInfo();
     final Map<String, dynamic> params = {
@@ -46,19 +48,23 @@ class DigitCalculationService {
       'is_birth': isBirth,
       'twin_status': twinStatus.toString(),
     };
+    if (coinConsumeId != null) {
+      params['coin_consume_id'] = coinConsumeId.toString();
+    }
 
     // 如果是双胞胎，添加父母生日
-    if (twinStatus != 0 && parentYear != null && parentMonth != null && parentDay != null) {
+    if (twinStatus != 0 &&
+        parentYear != null &&
+        parentMonth != null &&
+        parentDay != null) {
       params['parent_year'] = parentYear;
       params['parent_month'] = parentMonth;
       params['parent_day'] = parentDay;
     }
 
     final res = await HttpService.post<DigitCalculation>(
-      '/apis/getResultList',
-      params,
-      fromData: (json) => DigitCalculation.fromJson(json)
-    );
+        '/apis/getResultList', params,
+        fromData: (json) => DigitCalculation.fromJson(json));
     return res.data!;
   }
 
@@ -71,21 +77,30 @@ class DigitCalculationService {
     required String lastName,
     required String sex,
     required String hm,
+    int? coinConsumeId,
   }) async {
     final User? user = await UserService().getUserInfo();
+    final Map<String, dynamic> params = {
+      'token': user?.token ?? '',
+      'userid': user?.id.toString() ?? '',
+      'year': year,
+      'month': month,
+      'day': day,
+      'surname': surname,
+      'lastName': lastName,
+      'sex': sex,
+      'hm': hm,
+      'type': '-1',
+      'curyear': DateUtil.getCurrentYear(),
+      'curmonth': DateUtil.getCurrentMonth(),
+      'curday': DateUtil.getCurrentDay(),
+    };
+    if (coinConsumeId != null) {
+      params['coin_consume_id'] = coinConsumeId.toString();
+    }
     final res = await HttpService.post<DigitCalculation>(
       '/apis/getNameResultList',
-      {
-        'token': user?.token ?? '',
-        'userid': user?.id.toString() ?? '',
-        'year': year,
-        'month': month,
-        'day': day,
-        'surname': surname,
-        'lastName': lastName,
-        'sex': sex,
-        'hm': hm,
-      },
+      params,
       fromData: (json) => DigitCalculation.fromJson(json),
     );
     return res.data!;
@@ -263,7 +278,8 @@ class DigitCalculationService {
           limit: res.data!['limit'] ?? 0,
           isVip: (res.data!['limit'] == 999), // 999表示无限
         );
-        print('DigitCalculation QuotaInfo: remaining=${quotaInfo.remaining}, limit=${quotaInfo.limit}');
+        print(
+            'DigitCalculation QuotaInfo: remaining=${quotaInfo.remaining}, limit=${quotaInfo.limit}');
         return quotaInfo;
       }
     } catch (e) {
@@ -301,7 +317,8 @@ class DigitCalculationService {
           limit: res.data!['limit'] ?? 0,
           isVip: (res.data!['limit'] == 999), // 999表示无限
         );
-        print('NameCalculation QuotaInfo: remaining=${quotaInfo.remaining}, limit=${quotaInfo.limit}');
+        print(
+            'NameCalculation QuotaInfo: remaining=${quotaInfo.remaining}, limit=${quotaInfo.limit}');
         return quotaInfo;
       }
     } catch (e) {

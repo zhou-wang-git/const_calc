@@ -1,80 +1,163 @@
 import 'dart:async';
-import 'package:const_calc/util/message_util.dart';
+
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/register_service.dart';
 import '../../util/http_util.dart';
-import '../../util/password_validator.dart';
+import '../../util/message_util.dart';
+import '../../widgets/auth_input_styles.dart';
 
 class RestPasswordPage extends StatefulWidget {
-  const RestPasswordPage({super.key});
+  final String initialEmail;
+
+  const RestPasswordPage({
+    super.key,
+    this.initialEmail = '',
+  });
 
   @override
-  State<RestPasswordPage> createState() => _RestPasswordPage();
+  State<RestPasswordPage> createState() => _RestPasswordPageState();
 }
 
-class _RestPasswordPage extends State<RestPasswordPage> {
+class _RestPasswordPageState extends State<RestPasswordPage> {
   final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _codeController = TextEditingController();
+  final TextEditingController _otpController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmPasswordController =
       TextEditingController();
 
-  bool _isButtonDisabled = false;
-  int _countdown = 60; // 倒计时60秒
-  late Timer _timer;
-
-  // 隐藏/显示密码的控制变量
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
-  String _password = ''; // 用于实时密码强度显示
+  bool _isButtonDisabled = false;
+  int _countdown = 60;
+  Timer? _timer;
 
   @override
   void initState() {
     super.initState();
-    _passwordController.addListener(_onPasswordChanged);
+    _emailController.text = widget.initialEmail.trim();
   }
 
-  void _onPasswordChanged() {
-    setState(() {
-      _password = _passwordController.text;
-    });
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _emailController.dispose();
+    _otpController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
   }
 
-  final emailRegExp = RegExp(
-    r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
-  );
-
-  // 获取验证码
-  void _getCode() async {
-    String email = _emailController.text.trim();
-
-    if (email.isEmpty || !emailRegExp.hasMatch(email)) {
-      MessageUtil.info(context, '请输入有效的邮箱地址');
+  Future<void> _getCode() async {
+    final email = _emailController.text.trim();
+    if (!_isValidEmail(email)) {
+      MessageUtil.info(context, '请输入 KCC ID 绑定邮箱');
       return;
     }
 
     await HttpUtil.request<void>(
-      () => RegisterService.sendRecoverPasswordEmail(email: _emailController.text),
+      () => RegisterService.sendRecoverPasswordEmail(email: email),
       context,
       () => mounted,
     );
 
-    if (!mounted) return;
-    MessageUtil.info(context, '验证码已发送');
+    if (!mounted) {
+      return;
+    }
 
+    MessageUtil.info(
+      context,
+      '\u91cd\u7f6e\u9a8c\u8bc1\u7801\u5df2\u53d1\u9001\uff0c\u8bf7\u67e5\u6536\u90ae\u7bb1',
+    );
+    _startCountdown();
+  }
+
+  Future<void> _submit() async {
+    final email = _emailController.text.trim();
+    final otp = _otpController.text.trim();
+    final password = _passwordController.text;
+    final confirmPassword = _confirmPasswordController.text;
+
+    if (!_isValidEmail(email)) {
+      MessageUtil.info(context, '请输入 KCC ID 绑定邮箱');
+      return;
+    }
+
+    if (otp.isEmpty) {
+      MessageUtil.info(
+          context, '\u8bf7\u8f93\u5165\u90ae\u7bb1\u9a8c\u8bc1\u7801');
+      return;
+    }
+
+    final passwordError = _validatePassword(password);
+    if (passwordError != null) {
+      MessageUtil.info(context, passwordError);
+      return;
+    }
+
+    if (confirmPassword.isEmpty) {
+      MessageUtil.info(context, '请再次输入新的 KCC ID 密码');
+      return;
+    }
+
+    if (password != confirmPassword) {
+      MessageUtil.info(context,
+          '\u4e24\u6b21\u8f93\u5165\u7684\u5bc6\u7801\u4e0d\u4e00\u81f4');
+      return;
+    }
+
+    await HttpUtil.request<void>(
+      () => RegisterService.recoverPassword(
+        email: email,
+        code: otp,
+        newPassword: password,
+        confirmPassword: confirmPassword,
+      ),
+      context,
+      () => mounted,
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    MessageUtil.info(
+      context,
+      'KCC ID 密码已重置，请使用新密码登录',
+    );
+    Navigator.pop(context);
+  }
+
+  Future<void> _openSupportEmail() async {
+    final uri = Uri(
+      scheme: 'mailto',
+      path: 'support@kccdigital.com',
+    );
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    }
+  }
+
+  void _startCountdown() {
+    _timer?.cancel();
     setState(() {
       _isButtonDisabled = true;
+      _countdown = 60;
     });
 
-    // 启动倒计时
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_countdown > 0) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      if (_countdown > 1) {
         setState(() {
           _countdown--;
         });
       } else {
-        _timer.cancel();
+        timer.cancel();
         setState(() {
           _isButtonDisabled = false;
           _countdown = 60;
@@ -83,71 +166,40 @@ class _RestPasswordPage extends State<RestPasswordPage> {
     });
   }
 
-  // 提交表单
-  Future<void> _submit() async {
-    String email = _emailController.text.trim();
-    String code = _codeController.text.trim();
-    String password = _passwordController.text;
-    String confirmPassword = _confirmPasswordController.text;
-
-    if (email.isEmpty || !emailRegExp.hasMatch(email)) {
-      MessageUtil.info(context, '请输入有效的邮箱地址');
-      return;
-    }
-    if (code.isEmpty) {
-      MessageUtil.info(context, '请输入验证码');
-      return;
-    }
-    if (password.isEmpty) {
-      MessageUtil.info(context, '请输入密码');
-      return;
-    }
-    // 密码强度验证
-    final passwordError = PasswordValidator.validate(password);
-    if (passwordError != null) {
-      MessageUtil.info(context, passwordError);
-      return;
-    }
-    if (confirmPassword.isEmpty) {
-      MessageUtil.info(context, '请输入确认密码');
-      return;
-    }
-    if (confirmPassword != password) {
-      MessageUtil.info(context, '两次输入的密码不一致');
-      return;
-    }
-
-    // 调用重置密码 API
-    await HttpUtil.request<void>(
-      () => RegisterService.recoverPassword(
-        email: email,
-        code: code,
-        newPassword: password,
-        confirmPassword: confirmPassword,
-      ),
-      context,
-      () => mounted,
-    );
-
-    if (!mounted) return;
-    MessageUtil.info(context, '密码重置成功');
-
-    // 返回登录页
-    Navigator.pop(context);
+  bool _isValidEmail(String value) {
+    return RegExp(r'^[\w\.-]+@[\w\.-]+\.\w+$').hasMatch(value);
   }
 
-  @override
-  void dispose() {
-    _passwordController.removeListener(_onPasswordChanged);
-    _timer.cancel();
-    super.dispose();
+  String? _validatePassword(String password) {
+    if (password.isEmpty) {
+      return '请输入新的 KCC ID 密码';
+    }
+    if (password.length < 8) {
+      return '\u5bc6\u7801\u81f3\u5c11\u9700\u8981 8 \u4f4d';
+    }
+    if (!RegExp(r'[A-Z]').hasMatch(password)) {
+      return '\u5bc6\u7801\u5fc5\u987b\u5305\u542b\u5927\u5199\u5b57\u6bcd';
+    }
+    if (!RegExp(r'[a-z]').hasMatch(password)) {
+      return '\u5bc6\u7801\u5fc5\u987b\u5305\u542b\u5c0f\u5199\u5b57\u6bcd';
+    }
+    if (!RegExp(r'[0-9]').hasMatch(password)) {
+      return '\u5bc6\u7801\u5fc5\u987b\u5305\u542b\u6570\u5b57';
+    }
+    if (!RegExp(r'[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]').hasMatch(password)) {
+      return '\u5bc6\u7801\u5fc5\u987b\u5305\u542b\u7279\u6b8a\u5b57\u7b26';
+    }
+    return null;
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final dividerColor = isDark ? Colors.white24 : Colors.grey[200];
+    final cardColor = isDark
+        ? theme.cardTheme.color ?? const Color(0xFF1F1F1F)
+        : Colors.white;
+    final textColor = isDark ? Colors.white70 : Colors.black54;
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
@@ -155,18 +207,9 @@ class _RestPasswordPage extends State<RestPasswordPage> {
       appBar: AppBar(
         backgroundColor: theme.appBarTheme.backgroundColor,
         elevation: 0,
-        scrolledUnderElevation: 0,
-        surfaceTintColor: Colors.transparent,
-        leading: IconButton(
-          icon: Icon(
-            Icons.arrow_back_ios_new,
-            color: theme.appBarTheme.iconTheme?.color ?? (isDark ? Colors.white : Colors.black),
-          ),
-          onPressed: () => Navigator.pop(context),
-        ),
         centerTitle: true,
         title: Text(
-          '忘记密码',
+          '重置 KCC ID 密码',
           style: TextStyle(
             color: theme.appBarTheme.titleTextStyle?.color,
             fontSize: 18,
@@ -174,207 +217,223 @@ class _RestPasswordPage extends State<RestPasswordPage> {
           ),
         ),
       ),
-      body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildInputField('邮箱', _emailController, false, true),
-            Divider(color: dividerColor, height: 1, thickness: 1),
-
-            SizedBox(height: 8),
-            _buildInputField('验证码', _codeController, false, false),
-            Divider(color: dividerColor, height: 1, thickness: 1),
-
-            SizedBox(height: 8),
-            _buildPasswordField('新密码', _passwordController, _obscurePassword),
-            Divider(color: dividerColor, height: 1, thickness: 1),
-            PasswordStrengthIndicator(
-              password: _password,
-              centerRequirements: true,
-            ),
-
-            _buildPasswordField(
-              '确认密码',
-              _confirmPasswordController,
-              _obscureConfirmPassword,
-            ),
-            Divider(color: dividerColor, height: 1, thickness: 1),
-            const Spacer(),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
-                onPressed: _submit,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFFC107),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(25),
+      body: SafeArea(
+        child: AutofillGroup(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            child: Column(
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: cardColor,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '请使用 KCC ID 绑定邮箱完成验证，重置后即可回到数易使用新密码登录。',
+                        style: TextStyle(
+                          color: textColor,
+                          fontSize: 14,
+                          height: 1.7,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.06)
+                              : const Color(0xFFFFF8E1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '\u65b0\u5bc6\u7801\u9700\u540c\u65f6\u5305\u542b 8 \u4f4d\u4ee5\u4e0a\u957f\u5ea6\uff0c\u5927\u5199\u5b57\u6bcd\uff0c\u5c0f\u5199\u5b57\u6bcd\uff0c\u6570\u5b57\u548c\u7279\u6b8a\u5b57\u7b26\u3002',
+                          style: TextStyle(
+                            color: isDark
+                                ? Colors.white70
+                                : const Color(0xFF7A5A00),
+                            fontSize: 12.5,
+                            height: 1.6,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                child: const Text(
-                  '提交',
-                  style: TextStyle(fontSize: 16, color: Colors.white),
+                const SizedBox(height: 18),
+                _buildInput(
+                  hint: '请输入 KCC ID 绑定邮箱',
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  autofillHints: const [AutofillHints.email],
                 ),
-              ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildInput(
+                        hint:
+                            '\u8bf7\u8f93\u5165\u90ae\u7bb1\u9a8c\u8bc1\u7801',
+                        controller: _otpController,
+                        autofillHints: const [AutofillHints.oneTimeCode],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 112,
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: _isButtonDisabled ? null : _getCode,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFFFC107),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(25),
+                          ),
+                        ),
+                        child: Text(
+                          _isButtonDisabled
+                              ? '$_countdown s'
+                              : '\u83b7\u53d6\u9a8c\u8bc1\u7801',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _buildPasswordInput(
+                  hint: '请输入新的 KCC ID 密码',
+                  controller: _passwordController,
+                  obscureText: _obscurePassword,
+                  autofillHints: const [AutofillHints.newPassword],
+                  onToggle: () {
+                    setState(() {
+                      _obscurePassword = !_obscurePassword;
+                    });
+                  },
+                ),
+                const SizedBox(height: 16),
+                _buildPasswordInput(
+                  hint: '请再次输入新的 KCC ID 密码',
+                  controller: _confirmPasswordController,
+                  obscureText: _obscureConfirmPassword,
+                  autofillHints: const [AutofillHints.newPassword],
+                  onToggle: () {
+                    setState(() {
+                      _obscureConfirmPassword = !_obscureConfirmPassword;
+                    });
+                  },
+                ),
+                const SizedBox(height: 28),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: _submit,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFFC107),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(25),
+                      ),
+                    ),
+                    child: const Text(
+                      '\u786e\u8ba4\u91cd\u7f6e',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 28),
+                GestureDetector(
+                  onTap: _openSupportEmail,
+                  child: Text(
+                    'support@kccdigital.com',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: textColor,
+                      decoration: TextDecoration.underline,
+                      decorationColor: textColor,
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildInputField(
-    String label,
-    TextEditingController controller,
-    bool isPassword,
-    bool isEmail,
-  ) {
+  Widget _buildInput({
+    required String hint,
+    required TextEditingController controller,
+    TextInputType keyboardType = TextInputType.text,
+    Iterable<String>? autofillHints,
+  }) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final labelColor = isDark ? Colors.white : Colors.black;
-    final inputTextColor = isDark ? Colors.white : Colors.black;
-    final hintColor = isDark ? Colors.white38 : const Color(0xFFB5B5B5);
-    final inputBgColor = isDark ? theme.cardTheme.color : Colors.white;
 
-    return Row(
-      children: [
-        // 标签部分：设置标签列宽度小一点
-        Container(
-          width: 60, // 缩小标签宽度，给输入框腾出空间
-          alignment: Alignment.centerLeft,
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: labelColor,
-            ),
-          ),
+    return TextField(
+      controller: controller,
+      keyboardType: keyboardType,
+      autofillHints: autofillHints,
+      cursorColor: AuthInputStyles.cursorColor(theme),
+      style: TextStyle(
+        fontSize: 14,
+        color: AuthInputStyles.textColor(theme),
+      ),
+      decoration: AuthInputStyles.decoration(
+        context,
+        hintText: hint,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
         ),
-        const SizedBox(width: 12), // 标签和输入框之间的间距
-        // 输入框部分
-        Expanded(
-          child: TextField(
-            controller: controller,
-            obscureText: isPassword,
-            cursorColor: Colors.grey,
-            textAlign: TextAlign.left, // 文本左对齐
-            style: TextStyle(color: inputTextColor),
-            decoration: InputDecoration(
-              hintText: '请输入$label',
-              hintStyle: TextStyle(
-                color: hintColor,
-                fontSize: 14,
-              ),
-              filled: true,
-              fillColor: inputBgColor,
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 10,
-              ),
-            ),
-          ),
-        ),
-        // 仅在邮箱栏显示获取验证码按钮
-        if (isEmail) ...[
-          const SizedBox(width: 12), // 设置按钮与输入框之间的间距
-          SizedBox(
-            height: 48, // 和输入框一样高
-            child: ElevatedButton(
-              onPressed: _isButtonDisabled ? null : _getCode,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFFFC107), // 按钮颜色
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                side: BorderSide(color: isDark ? Colors.white24 : Colors.grey.shade300),
-                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-              ),
-              child: Text(
-                _isButtonDisabled ? '$_countdown 秒' : '获取验证码',
-                style: const TextStyle(fontSize: 12, color: Colors.white),
-              ),
-            ),
-          ),
-        ],
-      ],
+      ),
     );
   }
 
-  // 密码输入框，带可见性切换
-  Widget _buildPasswordField(
-    String label,
-    TextEditingController controller,
-    bool obscure,
-  ) {
+  Widget _buildPasswordInput({
+    required String hint,
+    required TextEditingController controller,
+    required bool obscureText,
+    Iterable<String>? autofillHints,
+    required VoidCallback onToggle,
+  }) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final labelColor = isDark ? Colors.white : Colors.black;
-    final inputTextColor = isDark ? Colors.white : Colors.black;
-    final hintColor = isDark ? Colors.white38 : const Color(0xFFB5B5B5);
-    final inputBgColor = isDark ? theme.cardTheme.color : Colors.white;
-    final iconColor = isDark ? Colors.white54 : Colors.grey;
-
-    return Row(
-      children: [
-        // 标签部分
-        Container(
-          width: 60, // 缩小标签宽度，给输入框腾出空间
-          alignment: Alignment.centerLeft,
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: labelColor,
-            ),
+    return TextField(
+      controller: controller,
+      obscureText: obscureText,
+      autofillHints: autofillHints,
+      cursorColor: AuthInputStyles.cursorColor(theme),
+      style: TextStyle(
+        fontSize: 14,
+        color: AuthInputStyles.textColor(theme),
+      ),
+      decoration: AuthInputStyles.decoration(
+        context,
+        hintText: hint,
+        suffixIcon: IconButton(
+          icon: Icon(
+            obscureText ? Icons.visibility_off : Icons.visibility,
+            color: AuthInputStyles.iconColor(theme),
           ),
+          onPressed: onToggle,
         ),
-        const SizedBox(width: 12), // 标签和输入框之间的间距
-        // 输入框部分
-        Expanded(
-          child: TextField(
-            controller: controller,
-            obscureText: obscure,
-            cursorColor: Colors.grey,
-            textAlign: TextAlign.left, // 文本左对齐
-            style: TextStyle(color: inputTextColor),
-            decoration: InputDecoration(
-              hintText: '请输入$label',
-              hintStyle: TextStyle(
-                color: hintColor,
-                fontSize: 14,
-              ),
-              filled: true,
-              fillColor: inputBgColor,
-              border: InputBorder.none,
-              // 去掉输入框的边框
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 10,
-              ),
-              suffixIcon: IconButton(
-                icon: Icon(
-                  obscure ? Icons.visibility_off : Icons.visibility,
-                  size: 18,
-                  color: iconColor,
-                ),
-                onPressed: () {
-                  setState(() {
-                    if (label == '新密码') {
-                      _obscurePassword = !_obscurePassword;
-                    } else {
-                      _obscureConfirmPassword = !_obscureConfirmPassword;
-                    }
-                  });
-                },
-              ),
-            ),
-          ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
         ),
-      ],
+      ),
     );
   }
 }

@@ -1,5 +1,16 @@
+import 'package:flutter/foundation.dart';
+
+import 'package:const_calc/dto/kcc/kcc_auth.dart';
 import 'package:const_calc/dto/login_user.dart';
+import 'package:const_calc/services/bigk/bigk_auth_service.dart';
+import 'package:const_calc/services/bigk/bigk_cart_service.dart';
+import 'package:const_calc/services/bigk/bigk_shop_service.dart';
+import 'package:const_calc/services/bigk/bigk_wallet_service.dart';
+import 'package:const_calc/services/bigk/bigk_wishlist_service.dart';
+import 'package:const_calc/services/cart_service.dart';
+import 'package:const_calc/services/kcc/kcc_auth_service.dart';
 import 'package:const_calc/services/user_service.dart';
+
 import 'http_service.dart';
 
 class AuthService {
@@ -12,15 +23,15 @@ class AuthService {
 
   AuthService._internal();
 
-  /// 同步获取是否登录
   bool get isLoggedIn => _isLoggedIn;
 
-  /// 同步获取当前登录用户
   LoginUser? get loginUser => _loginUser;
 
-  /// 启动时初始化登录状态（在 main() 中调用）
   Future<void> init() async {
-    final thisUser = await HttpService.getPreferences<LoginUser>("login_user", (map) => LoginUser.fromJson(map));
+    final thisUser = await HttpService.getPreferences<LoginUser>(
+      'login_user',
+      (map) => LoginUser.fromJson(map),
+    );
 
     if (thisUser != null) {
       _loginUser = thisUser;
@@ -31,30 +42,79 @@ class AuthService {
     }
   }
 
-  /// 登录：更新状态并缓存
   Future<LoginUser> login(String username, String password) async {
+    final kccSession = await KccAuthService().loginWithPassword(
+      identifier: username.trim(),
+      password: password,
+    );
+
     final res = await HttpService.post<LoginUser>(
-      '/apis/login',
+      '/apis/loginByKcc',
       {
-        'username': username,
-        'password': password,
+        'access_token': kccSession.tokens.accessToken,
+        'client_id': kccSession.clientId,
         'token': '',
         'userid': '',
       },
       fromData: (json) => LoginUser.fromJson(json),
     );
+
     _loginUser = res.data!;
     _isLoggedIn = true;
-    await HttpService.savePreferences("login_user", _loginUser!.toJson());
+    await HttpService.savePreferences('login_user', _loginUser!.toJson());
+
+    await Future.wait([
+      _syncKccSession(
+        identifier: username.trim(),
+        password: password,
+        fallbackSession: kccSession,
+      ),
+      CartService.syncCartKeyAfterLogin(),
+    ]);
+
     return _loginUser!;
   }
 
-  /// 登出：清空状态和缓存
+  Future<void> _syncKccSession({
+    required String identifier,
+    required String password,
+    required KccAuthSession fallbackSession,
+  }) async {
+    try {
+      await BigKAuthService().login(identifier, password);
+      final mallProfile = await BigKAuthService().syncProfile();
+
+      await UserService().syncMallBinding(
+        kccUserId:
+            mallProfile['sub']?.toString() ?? fallbackSession.userInfo.sub,
+        mallEmail:
+            mallProfile['email']?.toString() ?? fallbackSession.userInfo.email,
+        mallHandle: mallProfile['preferred_username']?.toString() ??
+            fallbackSession.userInfo.preferredUsername,
+        mallDisplayName:
+            mallProfile['name']?.toString() ?? fallbackSession.userInfo.name,
+        mallClientId: BigKAuthService.walletClientId,
+        mallWalletId: mallProfile['wallet_id']?.toString() ??
+            fallbackSession.userInfo.walletId,
+      );
+
+      debugPrint('BigK wallet client session synced to local mall binding');
+    } catch (e) {
+      debugPrint('BigK wallet client session sync failed: $e');
+    }
+  }
+
   Future<void> logout() async {
     _isLoggedIn = false;
     _loginUser = null;
-    await HttpService.removePreferences("login_user");
+    await HttpService.removePreferences('login_user');
     HttpService.clearToken();
     UserService.clearCache();
+
+    await BigKAuthService().logout();
+    BigKCartService.clearCache();
+    BigKWishlistService.clearCache();
+    BigKShopService.clearCache();
+    BigKWalletService.clearCache();
   }
 }

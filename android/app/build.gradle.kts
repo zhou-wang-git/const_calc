@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "app.numforlife.com"
+    namespace = "uni.UNI4377E5D"
     compileSdk = 36
 
     ndkVersion = "27.0.12077973"
@@ -14,8 +14,8 @@ android {
         applicationId = "app.numforlife.com"
         minSdk = flutter.minSdkVersion
         targetSdk = 36
-        versionCode = 121
-        versionName = "1.1.0"
+        versionCode = 134
+        versionName = "2.0.3"
         multiDexEnabled = true
     }
 

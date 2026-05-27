@@ -81,6 +81,7 @@ class _TutorConsultPageState extends State<TutorConsultPage> {
           tagIds: _filterIndex != 0 ? _filterIndex.toString() : '',
           sex: _searchFilterParams?.gender ?? '',
           location: _searchFilterParams?.location ?? '',
+          country: _searchFilterParams?.country ?? '',
           levelName: _searchFilterParams?.status ?? '',
           gradeId: _searchFilterParams?.level ?? '',
           experienceYears: _searchFilterParams?.experienceYearsStart == null
@@ -381,9 +382,16 @@ class _TutorConsultPageState extends State<TutorConsultPage> {
                               minimumSize: const Size(72, 30),
                               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             ),
-                            child: const Text(
-                              '点击查询',
-                              style: TextStyle(fontSize: 12, color: Colors.white),
+                            child: const Center(
+                              child: Text(
+                                '点击查询',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.white,
+                                  height: 1.0,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
                             ),
                           ),
                         ),

@@ -101,7 +101,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                 ),
               ),
 
-              const SizedBox(height: 28),
+              const SizedBox(height: 12),
 
               // 金色圆角大按钮
               SizedBox(

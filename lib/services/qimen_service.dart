@@ -11,19 +11,24 @@ class QimenService {
     required int day,
     required int hour,
     required int minute,
+    int? coinConsumeId,
   }) async {
     final User? user = await UserService().getUserInfo();
+    final Map<String, dynamic> params = {
+      'token': user?.token ?? '',
+      'userid': user?.id.toString() ?? '',
+      'year': year.toString(),
+      'month': month.toString(),
+      'day': day.toString(),
+      'hour': hour.toString(),
+      'minute': minute.toString(),
+    };
+    if (coinConsumeId != null) {
+      params['coin_consume_id'] = coinConsumeId.toString();
+    }
     final res = await HttpService.post<QimenResult>(
       '/apis/getAuspiciousTime',
-      {
-        'token': user?.token ?? '',
-        'userid': user?.id.toString() ?? '',
-        'year': year.toString(),
-        'month': month.toString(),
-        'day': day.toString(),
-        'hour': hour.toString(),
-        'minute': minute.toString(),
-      },
+      params,
       fromData: (json) => QimenResult.fromJson(json),
     );
     return res.data!;
@@ -71,7 +76,6 @@ class QimenService {
       );
     }
   }
-
 
   /// 获取六壬描述
   static Future<LiurenResult> getLiurenDescription({

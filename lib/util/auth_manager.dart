@@ -8,11 +8,11 @@ class AuthManager {
   static Future<void> logout(BuildContext context) async {
     HttpService.clearToken();
     await AuthService().logout();
+    if (!context.mounted) return;
 
-    await Navigator.push(
-      // ignore: use_build_context_synchronously
-      context,
+    await Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const LoginPage()),
+      (route) => false,
     );
   }
 }

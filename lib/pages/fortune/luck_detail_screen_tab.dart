@@ -135,6 +135,9 @@ class LuckDetailScreenTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final textColor = isDark ? Colors.white : Colors.black;
 
     // 五行标题
     final descriptions = ['自身性格', '子女财富', '事业伴侣', '官鬼疾病', '父母贵人'];
@@ -172,8 +175,9 @@ class LuckDetailScreenTab extends StatelessWidget {
                     Text(
                       data.fiveElements[index],
                       style: TextStyle(
-                        fontSize: screenWidth * 0.045, // 自适应字体
+                        fontSize: 18.sp, // 统一字号
                         fontWeight: FontWeight.bold,
+                        color: textColor,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -183,7 +187,9 @@ class LuckDetailScreenTab extends StatelessWidget {
                       descriptions[index],
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontSize: screenWidth * 0.03, // 自适应字体
+                        fontSize: 12.sp, // 统一字号
+                        fontWeight: FontWeight.bold,
+                        color: textColor,
                       ),
                     ),
                   ],
