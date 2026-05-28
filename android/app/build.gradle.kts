@@ -14,8 +14,8 @@ android {
         applicationId = "app.numforlife.com"
         minSdk = flutter.minSdkVersion
         targetSdk = 36
-        versionCode = 134
-        versionName = "2.0.3"
+        versionCode = 135
+        versionName = "2.0.4"
         multiDexEnabled = true
     }
 

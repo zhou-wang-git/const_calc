@@ -11,6 +11,8 @@
 	<string>需要访问相册以上传头像</string>
 	<key>NSCameraUsageDescription</key>
 	<string>需要访问相机以拍摄头像</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>用于在您主动授权时，为网页内容或相关服务提供定位支持。</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
