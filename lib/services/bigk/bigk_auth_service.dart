@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../dto/bigk/bigk_auth.dart';
 import '../../dto/bigk/bigk_profile.dart';
 import '../../handler/api_exception.dart';
+import '../kcc/kcc_auth_service.dart';
 import 'bigk_http_service.dart';
 
 /// Manages KCC ID login state used by PlenorHub commerce APIs.
@@ -12,8 +13,7 @@ class BigKAuthService {
   factory BigKAuthService() => _instance;
   BigKAuthService._internal();
 
-  static const String walletClientId = 'bigk_wallet';
-  static const String _scope = 'openid profile email';
+  static const String walletClientId = 'shuyi';
   static const String _walletIdKey = 'bigk_wallet_id';
   static const String _walletHandleKey = 'bigk_wallet_handle';
   static const String _walletEmailKey = 'bigk_wallet_email';
@@ -50,42 +50,32 @@ class BigKAuthService {
   }
 
   Future<BigKLoginResponse> login(String identifier, String password) async {
-    debugPrint('BigK: Attempting KCC ID login with identifier: $identifier');
-
-    final response = await BigKHttpService.postWithoutAuth<BigKLoginResponse>(
-      BigKHttpService.authPath('/login'),
-      {
-        'identifier': identifier,
-        'password': password,
-        'client_id': walletClientId,
-        'scope': _scope,
-      },
-      (data) => BigKLoginResponse.fromJson(data),
-      useAuthBase: true,
+    debugPrint(
+      'BigK: Attempting KCC ID PKCE login with identifier: $identifier',
     );
 
-    if (response.requiresTwoFactor) {
-      throw ApiException(
-        403,
-        'KCC ID two-factor authentication is required, but this app does not support the 2FA flow yet.',
-      );
-    }
-    if (response.token.isEmpty || response.refreshToken.isEmpty) {
-      throw ApiException(-1, 'KCC ID login response is missing tokens');
-    }
-
-    await BigKHttpService.saveTokens(
-      accessToken: response.token,
-      refreshToken: response.refreshToken,
-      expiresAt: response.expiresAt,
-      clientId: walletClientId,
+    final session = await KccAuthService().loginWithPassword(
+      identifier: identifier,
+      password: password,
     );
 
+    await restoreUnifiedSession(
+      accessToken: session.tokens.accessToken,
+      refreshToken: session.tokens.refreshToken,
+      expiresAt: session.tokens.expiresAt,
+      clientId: session.clientId,
+      profile: session.userInfo.toJson(),
+    );
     await syncProfile();
 
     debugPrint('BigK: KCC ID login successful, kccUserId: $_kccUserId');
 
-    return response;
+    return BigKLoginResponse(
+      token: session.tokens.accessToken,
+      refreshToken: session.tokens.refreshToken,
+      expiresAt: session.tokens.expiresAt,
+      refreshExpiresAt: DateTime.now().add(const Duration(days: 30)),
+    );
   }
 
   Future<BigKLoginResponse> restoreSession(BigKLoginResponse response) async {
@@ -144,7 +134,8 @@ class BigKAuthService {
     } catch (e) {
       if (e is ApiException) {
         final lower = e.message.toLowerCase();
-        final walletNotReady = (e.code == 401 || e.code == 404) &&
+        final walletNotReady =
+            (e.code == 401 || e.code == 404) &&
             (lower.contains('no wallet profile linked') ||
                 lower.contains('wallet not found') ||
                 lower.contains('/wallet/provision'));
@@ -210,13 +201,13 @@ class BigKAuthService {
     final wallet = response['wallet'];
     final walletId = wallet is Map<String, dynamic>
         ? wallet['external_id']?.toString() ??
-            wallet['wallet_id']?.toString() ??
-            wallet['id']?.toString()
+              wallet['wallet_id']?.toString() ??
+              wallet['id']?.toString()
         : wallet is Map
-            ? Map<String, dynamic>.from(wallet)['external_id']?.toString() ??
-                Map<String, dynamic>.from(wallet)['wallet_id']?.toString() ??
-                Map<String, dynamic>.from(wallet)['id']?.toString()
-            : null;
+        ? Map<String, dynamic>.from(wallet)['external_id']?.toString() ??
+              Map<String, dynamic>.from(wallet)['wallet_id']?.toString() ??
+              Map<String, dynamic>.from(wallet)['id']?.toString()
+        : null;
 
     if (walletId != null && walletId.isNotEmpty) {
       _walletId = walletId;
@@ -239,27 +230,26 @@ class BigKAuthService {
   Future<List<BigKSessionInfo>> getSessions() async {
     debugPrint('BigK: Fetching active sessions...');
 
-    return BigKHttpService.getWallet<List<BigKSessionInfo>>(
-      '/auth/sessions',
-      (data) {
-        final payload = data['data'] is Map<String, dynamic>
-            ? data['data'] as Map<String, dynamic>
-            : data['data'] is Map
-                ? Map<String, dynamic>.from(data['data'] as Map)
-                : data is Map<String, dynamic>
-                    ? data
-                    : Map<String, dynamic>.from(data as Map);
+    return BigKHttpService.getWallet<List<BigKSessionInfo>>('/auth/sessions', (
+      data,
+    ) {
+      final payload = data['data'] is Map<String, dynamic>
+          ? data['data'] as Map<String, dynamic>
+          : data['data'] is Map
+          ? Map<String, dynamic>.from(data['data'] as Map)
+          : data is Map<String, dynamic>
+          ? data
+          : Map<String, dynamic>.from(data as Map);
 
-        final sessions = payload['sessions'] is List
-            ? payload['sessions'] as List
-            : payload['data'] is List
-                ? payload['data'] as List
-                : data['sessions'] is List
-                    ? data['sessions'] as List
-                    : const [];
-        return sessions.map(BigKSessionInfo.fromJson).toList();
-      },
-    );
+      final sessions = payload['sessions'] is List
+          ? payload['sessions'] as List
+          : payload['data'] is List
+          ? payload['data'] as List
+          : data['sessions'] is List
+          ? data['sessions'] as List
+          : const [];
+      return sessions.map(BigKSessionInfo.fromJson).toList();
+    });
   }
 
   Future<void> revokeSession(String sessionId) async {

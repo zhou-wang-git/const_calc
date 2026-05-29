@@ -19,7 +19,7 @@ class MallBinding {
     this.mallEmail = '',
     this.mallHandle = '',
     this.mallDisplayName = '',
-    this.mallClientId = 'bigk_wallet',
+    this.mallClientId = 'shuyi',
     this.mallWalletId = '',
     this.mallBoundAt = 0,
     this.hasPassword = false,
@@ -37,13 +37,14 @@ class MallBinding {
       mallEmail: mallEmail,
       mallHandle: mallHandle,
       mallDisplayName: json['mall_display_name']?.toString() ?? '',
-      mallClientId: json['mall_client_id']?.toString() ?? 'bigk_wallet',
+      mallClientId: json['mall_client_id']?.toString() ?? 'shuyi',
       mallWalletId: json['mall_wallet_id']?.toString() ?? '',
       mallBoundAt: json['mall_bound_at'] ?? 0,
       hasPassword:
           json['has_password'] == true || json['has_mall_password'] == 1,
       mallPasswordUpdatedAt: json['mall_password_updated_at'] ?? 0,
-      preferredIdentifier: json['preferred_identifier']?.toString() ??
+      preferredIdentifier:
+          json['preferred_identifier']?.toString() ??
           (mallEmail.isNotEmpty ? mallEmail : mallHandle),
     );
   }
@@ -162,17 +163,17 @@ class User {
     final mallBindingJson = json['mall_binding'] is Map<String, dynamic>
         ? json['mall_binding'] as Map<String, dynamic>
         : json['mall_binding'] is Map
-            ? Map<String, dynamic>.from(json['mall_binding'] as Map)
-            : <String, dynamic>{
-                'mall_bound': json['mall_bound'],
-                'kcc_user_id': json['kcc_user_id'],
-                'mall_email': json['mall_email'],
-                'mall_handle': json['mall_handle'],
-                'mall_display_name': json['mall_display_name'],
-                'mall_client_id': json['mall_client_id'],
-                'mall_wallet_id': json['mall_wallet_id'],
-                'mall_bound_at': json['mall_bound_at'],
-              };
+        ? Map<String, dynamic>.from(json['mall_binding'] as Map)
+        : <String, dynamic>{
+            'mall_bound': json['mall_bound'],
+            'kcc_user_id': json['kcc_user_id'],
+            'mall_email': json['mall_email'],
+            'mall_handle': json['mall_handle'],
+            'mall_display_name': json['mall_display_name'],
+            'mall_client_id': json['mall_client_id'],
+            'mall_wallet_id': json['mall_wallet_id'],
+            'mall_bound_at': json['mall_bound_at'],
+          };
 
     return User(
       id: json['id'] ?? 0,

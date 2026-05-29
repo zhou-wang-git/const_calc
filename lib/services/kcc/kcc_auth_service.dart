@@ -12,7 +12,6 @@ import '../bigk/bigk_http_service.dart';
 
 class KccAuthService {
   static const String unifiedClientId = 'shuyi';
-  static const String walletClientId = 'bigk_wallet';
   static const String scope = 'openid profile email';
   static const String _codeChallengeMethod = 'S256';
   static const String _registerCookieKey = 'kcc_register_cookie_header';
@@ -25,7 +24,8 @@ class KccAuthService {
         lower.contains('credentials are invalid') ||
         lower.contains('invalid credentials') ||
         message.contains(
-            '\u7edf\u4e00\u8eab\u4efd\u8d26\u53f7\u6216\u5bc6\u7801\u9519\u8bef') ||
+          '\u7edf\u4e00\u8eab\u4efd\u8d26\u53f7\u6216\u5bc6\u7801\u9519\u8bef',
+        ) ||
         message.contains('KCC ID \u8d26\u53f7\u6216\u5bc6\u7801\u9519\u8bef');
   }
 
@@ -33,23 +33,10 @@ class KccAuthService {
     required String identifier,
     required String password,
   }) async {
-    final normalizedIdentifier = identifier.trim();
-    try {
-      return await _loginWithAuthorizationCodeFlow(
-        identifier: normalizedIdentifier,
-        password: password,
-        clientId: unifiedClientId,
-      );
-    } on ApiException catch (e) {
-      if (!_shouldFallbackToWalletClient(e.message)) {
-        rethrow;
-      }
-    }
-
     return _loginWithAuthorizationCodeFlow(
-      identifier: normalizedIdentifier,
+      identifier: identifier.trim(),
       password: password,
-      clientId: walletClientId,
+      clientId: unifiedClientId,
     );
   }
 
@@ -78,7 +65,9 @@ class KccAuthService {
     final authorizationCode = authorizeJson['code']?.toString() ?? '';
     if (authorizationCode.isEmpty) {
       throw ApiException(
-          -1, 'KCC ID authorize failed: missing authorization code');
+        -1,
+        'KCC ID authorize failed: missing authorization code',
+      );
     }
 
     final tokenJson = await _postJson(
@@ -127,7 +116,7 @@ class KccAuthService {
       'channel': channel,
       'target': target,
       'purpose': purpose,
-      if (purpose == 'registration') 'client_id': walletClientId,
+      if (purpose == 'registration') 'client_id': unifiedClientId,
     };
 
     final json = await _postJson(
@@ -150,10 +139,7 @@ class KccAuthService {
   }) async {
     final json = await _postJson(
       BigKHttpService.authPath('/otp/verify'),
-      {
-        'session_id': sessionId,
-        'code': code,
-      },
+      {'session_id': sessionId, 'code': code},
       fallbackMessage: 'KCC ID OTP verification failed',
       cookieStoreKey: _registerCookieKey,
     );
@@ -179,7 +165,7 @@ class KccAuthService {
       BigKHttpService.authPath('/register'),
       {
         'otp_session_id': otpSessionId,
-        'client_id': walletClientId,
+        'client_id': unifiedClientId,
         'password': password,
         'password_confirmation': passwordConfirmation,
         'display_name': displayName,
@@ -196,9 +182,7 @@ class KccAuthService {
   }) async {
     final json = await _postJson(
       BigKHttpService.authPath('/forgot-password'),
-      {
-        'email': email.trim(),
-      },
+      {'email': email.trim()},
       fallbackMessage: 'KCC ID forgot password request failed',
       cookieStoreKey: _resetCookieKey,
       resetCookieStore: true,
@@ -220,11 +204,7 @@ class KccAuthService {
   }) async {
     final json = await _postJson(
       BigKHttpService.authPath('/verify-reset-otp'),
-      {
-        'email': email.trim(),
-        'session_id': sessionId,
-        'otp': otp.trim(),
-      },
+      {'email': email.trim(), 'session_id': sessionId, 'otp': otp.trim()},
       fallbackMessage: 'KCC ID reset OTP verification failed',
       cookieStoreKey: _resetCookieKey,
     );
@@ -305,10 +285,12 @@ class KccAuthService {
             'Cookie': storedCookieHeader,
         };
 
-        final dio = Dio(BaseOptions(
-          validateStatus: (_) => true,
-          responseType: ResponseType.plain,
-        ));
+        final dio = Dio(
+          BaseOptions(
+            validateStatus: (_) => true,
+            responseType: ResponseType.plain,
+          ),
+        );
         final response = await dio.postUri(
           _buildUri(path),
           data: jsonEncode(body),
@@ -401,7 +383,8 @@ class KccAuthService {
     }
 
     if (statusCode < 200 || statusCode >= 300) {
-      final rawMessage = _extractErrorMessage(json) ??
+      final rawMessage =
+          _extractErrorMessage(json) ??
           json['error_description']?.toString() ??
           json['error']?.toString() ??
           fallbackMessage;
@@ -485,7 +468,8 @@ class KccAuthService {
 
   void _throwIfTwoFactorChallenge(Map<String, dynamic> json) {
     final challengeToken = json['challenge_token']?.toString() ?? '';
-    final requiresTwoFactor = json['requires_2fa'] == true ||
+    final requiresTwoFactor =
+        json['requires_2fa'] == true ||
         json['2fa_required'] == true ||
         json['2fa_enrollment_required'] == true ||
         challengeToken.isNotEmpty;
@@ -499,25 +483,15 @@ class KccAuthService {
     );
   }
 
-  bool _shouldFallbackToWalletClient(String message) {
-    final lower = message.toLowerCase();
-    return lower.contains('access_denied') ||
-        lower.contains('no authorization is configured for this client');
-  }
-
   Uri _buildUri(String path) {
     final normalizedPath = path.startsWith('/') ? path : '/$path';
     return Uri.parse('${BigKHttpService.authBaseUrl}$normalizedPath');
   }
 
-  String _generateCodeVerifier([int length = 64]) {
-    const charset =
-        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+  String _generateCodeVerifier([int byteLength = 32]) {
     final random = Random.secure();
-    return List.generate(
-      length,
-      (_) => charset[random.nextInt(charset.length)],
-    ).join();
+    final bytes = List<int>.generate(byteLength, (_) => random.nextInt(256));
+    return base64UrlEncode(bytes).replaceAll('=', '');
   }
 
   String _buildCodeChallenge(String verifier) {

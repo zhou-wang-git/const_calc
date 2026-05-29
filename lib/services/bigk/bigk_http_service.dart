@@ -15,7 +15,7 @@ class BigKHttpService {
       'https://bigk-admin-production.up.railway.app/api/v1';
   static const String commerceBaseUrl =
       'https://plenorhub-production.up.railway.app/api/v1';
-  static const String _defaultClientId = 'bigk_wallet';
+  static const String _defaultClientId = 'shuyi';
 
   static const String _accessTokenKey = 'bigk_access_token';
   static const String _refreshTokenKey = 'bigk_refresh_token';
@@ -305,10 +305,7 @@ class BigKHttpService {
     );
   }
 
-  static Future<T> delete<T>(
-    String path,
-    T Function(dynamic) fromData,
-  ) async {
+  static Future<T> delete<T>(String path, T Function(dynamic) fromData) async {
     await _ensureValidToken();
 
     return _sendRequest(
@@ -425,12 +422,13 @@ class BigKHttpService {
     }
 
     try {
-      final request = http.Request(
-        method,
-        _buildUri(baseUrl, path, queryParams: queryParams),
-      )
-        ..headers.addAll(_buildHeaders(includeAuth: includeAuth))
-        ..body = body == null ? '' : jsonEncode(body);
+      final request =
+          http.Request(
+              method,
+              _buildUri(baseUrl, path, queryParams: queryParams),
+            )
+            ..headers.addAll(_buildHeaders(includeAuth: includeAuth))
+            ..body = body == null ? '' : jsonEncode(body);
 
       final streamed = await request.send();
       final httpResponse = await http.Response.fromStream(streamed);
@@ -463,10 +461,7 @@ class BigKHttpService {
     }
 
     try {
-      final request = http.MultipartRequest(
-        method,
-        _buildUri(baseUrl, path),
-      );
+      final request = http.MultipartRequest(method, _buildUri(baseUrl, path));
       request.headers.addAll(_buildHeaders(includeAuth: includeAuth));
       request.headers.remove('Content-Type');
 
@@ -479,11 +474,7 @@ class BigKHttpService {
       }
 
       request.files.add(
-        http.MultipartFile.fromBytes(
-          fileField,
-          fileBytes,
-          filename: fileName,
-        ),
+        http.MultipartFile.fromBytes(fileField, fileBytes, filename: fileName),
       );
 
       final streamed = await request.send();
@@ -626,11 +617,7 @@ class BigKHttpService {
       }
 
       request.files.add(
-        http.MultipartFile.fromBytes(
-          fileField,
-          fileBytes,
-          filename: fileName,
-        ),
+        http.MultipartFile.fromBytes(fileField, fileBytes, filename: fileName),
       );
 
       final streamed = await request.send();
@@ -706,7 +693,8 @@ class BigKHttpService {
   ) {
     try {
       final errorBody = _decodeResponseBody(response);
-      final message = errorBody['message'] ??
+      final message =
+          errorBody['message'] ??
           errorBody['error_description'] ??
           errorBody['error'] ??
           fallbackMessage;

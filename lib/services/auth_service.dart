@@ -48,27 +48,20 @@ class AuthService {
       password: password,
     );
 
-    final res = await HttpService.post<LoginUser>(
-      '/apis/loginByKcc',
-      {
-        'access_token': kccSession.tokens.accessToken,
-        'client_id': kccSession.clientId,
-        'token': '',
-        'userid': '',
-      },
-      fromData: (json) => LoginUser.fromJson(json),
-    );
+    final res = await HttpService.post<LoginUser>('/apis/loginByKcc', {
+      'access_token': kccSession.tokens.accessToken,
+      'id_token': kccSession.tokens.idToken,
+      'client_id': kccSession.clientId,
+      'token': '',
+      'userid': '',
+    }, fromData: (json) => LoginUser.fromJson(json));
 
     _loginUser = res.data!;
     _isLoggedIn = true;
     await HttpService.savePreferences('login_user', _loginUser!.toJson());
 
     await Future.wait([
-      _syncKccSession(
-        identifier: username.trim(),
-        password: password,
-        fallbackSession: kccSession,
-      ),
+      _syncKccSession(fallbackSession: kccSession),
       CartService.syncCartKeyAfterLogin(),
     ]);
 
@@ -76,12 +69,16 @@ class AuthService {
   }
 
   Future<void> _syncKccSession({
-    required String identifier,
-    required String password,
     required KccAuthSession fallbackSession,
   }) async {
     try {
-      await BigKAuthService().login(identifier, password);
+      await BigKAuthService().restoreUnifiedSession(
+        accessToken: fallbackSession.tokens.accessToken,
+        refreshToken: fallbackSession.tokens.refreshToken,
+        expiresAt: fallbackSession.tokens.expiresAt,
+        clientId: fallbackSession.clientId,
+        profile: fallbackSession.userInfo.toJson(),
+      );
       final mallProfile = await BigKAuthService().syncProfile();
 
       await UserService().syncMallBinding(
@@ -89,12 +86,14 @@ class AuthService {
             mallProfile['sub']?.toString() ?? fallbackSession.userInfo.sub,
         mallEmail:
             mallProfile['email']?.toString() ?? fallbackSession.userInfo.email,
-        mallHandle: mallProfile['preferred_username']?.toString() ??
+        mallHandle:
+            mallProfile['preferred_username']?.toString() ??
             fallbackSession.userInfo.preferredUsername,
         mallDisplayName:
             mallProfile['name']?.toString() ?? fallbackSession.userInfo.name,
-        mallClientId: BigKAuthService.walletClientId,
-        mallWalletId: mallProfile['wallet_id']?.toString() ??
+        mallClientId: fallbackSession.clientId,
+        mallWalletId:
+            mallProfile['wallet_id']?.toString() ??
             fallbackSession.userInfo.walletId,
       );
 
